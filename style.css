@@ -1,0 +1,167 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1b1410;
+  --panel: #2a201a;
+  --ink: #f0e6d2;
+  --accent: #c8a04a;
+  --accent-dark: #8a6d2f;
+  --danger: #d4503a;
+}
+
+body {
+  background: #120d0a;
+  color: var(--ink);
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  min-height: 100vh;
+}
+
+#app {
+  width: 1152px; /* 960 画布 + 12 间隙 + 180 商店 */
+  max-width: 100%;
+}
+
+#hud {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: var(--panel);
+  border: 1px solid var(--accent-dark);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+}
+
+.hud-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 2px;
+}
+
+.hud-item { font-size: 15px; }
+.hud-item b { color: var(--accent); font-size: 18px; }
+.hud-hint { color: #9a8a72; font-size: 13px; margin-left: auto; }
+
+.skillbar { display: flex; gap: 8px; }
+.skill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #3a2c5a;
+  border: 1px solid #6a5a9a;
+  border-radius: 6px;
+  padding: 4px 12px;
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 64px;
+}
+.skill-btn:hover:not(:disabled) { border-color: #a08ad8; }
+.skill-btn.armed { background: #6a5a9a; border-color: #c8b8f8; box-shadow: 0 0 8px #a08ad8; }
+.skill-btn:disabled { background: #2a2438; border-color: #443a5a; color: #6a6080; cursor: default; }
+.sk-name { font-size: 14px; font-weight: 700; }
+.sk-cd { font-size: 11px; color: #b8a8e8; min-height: 13px; }
+
+.btn {
+  background: var(--accent);
+  color: #2a1c08;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn:hover { background: #d9b25c; }
+.btn:disabled { background: #6b5a3a; color: #9a8a72; cursor: default; }
+
+#stage { display: flex; gap: 12px; }
+
+#game {
+  background: #3a4a2c;
+  border: 2px solid var(--accent-dark);
+  border-radius: 8px;
+  cursor: crosshair;
+}
+
+#shop {
+  width: 180px;
+  background: var(--panel);
+  border: 1px solid var(--accent-dark);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#shop h3 { color: var(--accent); font-size: 16px; margin-bottom: 4px; }
+
+.tower-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #34281f;
+  border: 1px solid var(--accent-dark);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.tower-btn:hover { border-color: var(--accent); }
+.tower-btn.active { border-color: var(--accent); background: #443322; }
+.tw-name { font-size: 15px; font-weight: 700; }
+.tw-desc { font-size: 12px; color: #b8a888; }
+.tw-cost { font-size: 12px; color: var(--accent); }
+.tw-fac {
+  font-style: normal;
+  font-size: 11px;
+  background: var(--accent-dark);
+  color: #1b1410;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.bond-panel {
+  background: #34281f;
+  border: 1px solid var(--accent-dark);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.bond-title { font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+.bond-list { font-size: 12px; line-height: 1.6; color: #8a7a62; }
+.bond-list .on { color: #6fae4a; font-weight: 700; }
+
+.sel-info {
+  margin-top: auto;
+  font-size: 13px;
+  color: #b8a888;
+  line-height: 1.6;
+  border-top: 1px solid var(--accent-dark);
+  padding-top: 10px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.overlay.hidden { display: none; }
+.overlay-card {
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 32px 40px;
+  text-align: center;
+  max-width: 420px;
+}
+.overlay-card h2 { color: var(--accent); font-size: 28px; margin-bottom: 12px; }
+.overlay-card p { font-size: 15px; line-height: 1.7; margin-bottom: 20px; color: #d8cdb8; }
