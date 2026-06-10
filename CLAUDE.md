@@ -1,4 +1,4 @@
-# 项目：三国塔防
+# 项目：tower-defense
 
 基于三国题材的网页塔防游戏（原生 HTML5 Canvas + JS，无构建依赖）。
 

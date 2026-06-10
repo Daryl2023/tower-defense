@@ -125,7 +125,27 @@ const game = {
   targeting: null,
   blasts: [],
   overlayMode: null,
+  paused: false,
+  speed: 1,
+  maxUnlocked: 0,
 };
+
+// ===== 存档（R7-2）=====
+const SAVE_KEY = "sgtd_save_v1";
+function loadSave() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (s && typeof s.maxUnlocked === "number") return s;
+  } catch (e) { /* 忽略损坏存档 */ }
+  return { maxUnlocked: 0 };
+}
+function saveProgress() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ maxUnlocked: game.maxUnlocked })); }
+  catch (e) { /* 隐私模式等可能失败，忽略 */ }
+}
+function unlockLevel(i) {
+  if (i > game.maxUnlocked) { game.maxUnlocked = Math.min(i, LEVELS.length - 1); saveProgress(); }
+}
 
 // ===== DOM =====
 const el = {
@@ -142,6 +162,11 @@ const el = {
   ovTitle: document.getElementById("ovTitle"),
   ovText: document.getElementById("ovText"),
   ovBtn: document.getElementById("ovBtn"),
+  ovBtn2: document.getElementById("ovBtn2"),
+  menuList: document.getElementById("menuList"),
+  pauseBtn: document.getElementById("pauseBtn"),
+  speedBtn: document.getElementById("speedBtn"),
+  menuBtn: document.getElementById("menuBtn"),
   shopBtns: Array.from(document.querySelectorAll(".tower-btn")),
   skillBtns: Array.from(document.querySelectorAll(".skill-btn")),
 };
@@ -209,6 +234,7 @@ canvas.addEventListener("click", () => {
     hero: game.selectedHero, arch: hero.arch, c, r,
     x: c * TILE + TILE / 2, y: r * TILE + TILE / 2,
     level: 1, cooldown: 0, angle: 0, bondMult: 1, attackAnim: 1, phase: Math.random() * 6.28,
+    invested: hero.cost,
   });
   game.selectedSlot = game.towers[game.towers.length - 1];
   updateSelInfo();
@@ -277,19 +303,90 @@ el.startBtn.addEventListener("click", () => {
 });
 
 el.ovBtn.addEventListener("click", () => {
+  const mode = game.overlayMode;
+  if (mode === "menu") return; // 菜单模式下由关卡按钮处理
   el.overlay.classList.add("hidden");
-  if (game.overlayMode === "levelClear") startLevel(game.levelIndex + 1);
-  else if (game.overlayMode === "win") startLevel(0);
-  else if (game.overlayMode === "retry") startLevel(game.levelIndex);
+  if (mode === "levelClear") startLevel(game.levelIndex + 1);
+  else if (mode === "win") { showMenu(); return; }
+  else if (mode === "retry") startLevel(game.levelIndex);
+  // intro / levelClear / retry → 开始战斗
   game.overlayMode = null;
   game.running = true;
 });
 
+el.ovBtn2.addEventListener("click", () => showMenu());
+el.menuBtn.addEventListener("click", () => showMenu());
+
+// ===== 主菜单 / 关卡选择（R7-1）=====
+function showMenu() {
+  game.running = false;
+  game.over = false;
+  game.paused = false;
+  game.overlayMode = "menu";
+  el.ovTitle.textContent = "三国塔防";
+  el.ovText.textContent = "选择战场，运筹帷幄。";
+  el.menuList.classList.remove("hidden");
+  el.ovBtn.classList.add("hidden");
+  el.ovBtn2.classList.add("hidden");
+  renderMenuList();
+  el.overlay.classList.remove("hidden");
+  updatePauseUI();
+}
+function renderMenuList() {
+  el.menuList.innerHTML = "";
+  LEVELS.forEach((lv, i) => {
+    const locked = i > game.maxUnlocked;
+    const cleared = i < game.maxUnlocked;
+    const btn = document.createElement("button");
+    btn.className = "level-btn" + (locked ? " locked" : "") + (cleared ? " cleared" : "");
+    const tag = locked ? "未解锁" : cleared ? "已通关" : "可挑战";
+    btn.innerHTML = `<span class="lv-name">${i + 1}. ${lv.name}</span><span class="lv-tag">${tag}</span>`;
+    if (!locked) btn.addEventListener("click", () => enterLevel(i));
+    el.menuList.appendChild(btn);
+  });
+}
+function enterLevel(i) {
+  startLevel(i);
+  showIntro(i);
+}
+function showIntro(i) {
+  const lv = LEVELS[i];
+  game.overlayMode = "intro";
+  el.menuList.classList.add("hidden");
+  el.ovTitle.textContent = lv.name;
+  el.ovText.textContent = lv.intro;
+  el.ovBtn.textContent = "出战";
+  el.ovBtn.classList.remove("hidden");
+  el.ovBtn2.classList.remove("hidden");
+  el.overlay.classList.remove("hidden");
+}
+
+// ===== 暂停 / 加速（R7-3）=====
+el.pauseBtn.addEventListener("click", togglePause);
+el.speedBtn.addEventListener("click", toggleSpeed);
+function togglePause() {
+  if (!game.running || game.over) return;
+  game.paused = !game.paused;
+  updatePauseUI();
+}
+function toggleSpeed() {
+  game.speed = game.speed === 1 ? 2 : 1;
+  updatePauseUI();
+}
+function updatePauseUI() {
+  el.pauseBtn.textContent = game.paused ? "继续" : "暂停";
+  el.speedBtn.textContent = game.speed + "x";
+  el.pauseBtn.disabled = !game.running || game.over;
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "u" || e.key === "U") tryUpgrade();
+  if (e.key === "s" || e.key === "S") trySell();
   if (e.key === "Escape") { game.targeting = null; updateSkillUI(); }
   if (e.key === "1") onSkillButton("fire");
   if (e.key === "2") onSkillButton("fort");
+  if (e.key === " ") { e.preventDefault(); togglePause(); }
+  if (e.key === "f" || e.key === "F") toggleSpeed();
 });
 
 function tryUpgrade() {
@@ -299,6 +396,23 @@ function tryUpgrade() {
   if (game.gold < cost) { flash("军粮不足"); return; }
   game.gold -= cost;
   t.level += 1;
+  t.invested += cost;
+  updateSelInfo();
+}
+
+// ===== 卖塔（R7-4）=====
+const SELL_REFUND_RATE = 0.6;
+function sellRefund(t) { return Math.round((t.invested || HEROES[t.hero].cost) * SELL_REFUND_RATE); }
+function trySell() {
+  const t = game.selectedSlot;
+  if (!t) return;
+  const refund = sellRefund(t);
+  const i = game.towers.indexOf(t);
+  if (i >= 0) game.towers.splice(i, 1);
+  game.gold += refund;
+  game.floaters.push({ x: t.x, y: t.y, text: "+" + refund, life: 0.9, color: "#c8a04a" });
+  Art.emitParticles(t.x, t.y, { count: 8, color: HEROES[t.hero].color, speed: 60, life: 0.4, size: 3 });
+  game.selectedSlot = null;
   updateSelInfo();
 }
 
@@ -497,6 +611,11 @@ function draw() {
   drawFloaters();
   drawHover();
   drawTargeting();
+  if (game.paused && game.running) {
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#f0e6d2"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("‖ 暂停", canvas.width / 2, canvas.height / 2);
+  }
 }
 
 function drawBlasts() {
@@ -628,6 +747,7 @@ function updateHUD() {
   else if (!game.betweenWaves) { el.startBtn.textContent = "激战中…"; el.startBtn.disabled = true; }
   else { el.startBtn.textContent = game.waveIndex < 0 ? "出战" : "下一波"; el.startBtn.disabled = false; }
   updateSkillUI();
+  updatePauseUI();
 }
 
 function updateSkillUI() {
@@ -648,7 +768,9 @@ function updateSelInfo() {
     const bondNote = t.bondMult > 1 ? `<br><span style="color:#6fae4a">羁绊 +${Math.round((t.bondMult - 1) * 100)}%</span>` : "";
     el.selInfo.innerHTML =
       `<b>${hero.name}</b>（${hero.faction}） Lv.${t.level}${bondNote}<br>` +
-      `伤害 ${s.damage}　射程 ${s.range}<br><br>按 <b>U</b> 升级（军粮 ${upgradeCost(t)}）`;
+      `伤害 ${s.damage}　射程 ${s.range}<br><br>` +
+      `按 <b>U</b> 升级（军粮 ${upgradeCost(t)}）<br>` +
+      `按 <b>S</b> 拆除（返还军粮 ${sellRefund(t)}）`;
     return;
   }
   if (game.selectedHero) {
@@ -666,12 +788,17 @@ function flash(text) {
 
 // ===== 胜负 =====
 function win() {
-  game.over = true; game.running = false;
+  game.over = true; game.running = false; game.paused = false;
+  unlockLevel(game.levelIndex + 1); // 解锁下一关（R7-2）
+  el.menuList.classList.add("hidden");
+  el.ovBtn.classList.remove("hidden");
+  el.ovBtn2.classList.remove("hidden");
   if (game.levelIndex >= LEVELS.length - 1) {
     game.overlayMode = "win";
     el.ovTitle.textContent = "天下大势已定！";
-    el.ovText.textContent = "三战皆捷，威震华夏。可再起战端，重头来过。";
-    el.ovBtn.textContent = "再起战端";
+    el.ovText.textContent = "三战皆捷，威震华夏。";
+    el.ovBtn.textContent = "返回主菜单";
+    el.ovBtn2.classList.add("hidden");
   } else {
     game.overlayMode = "levelClear";
     el.ovTitle.textContent = "大捷！";
@@ -679,14 +806,19 @@ function win() {
     el.ovBtn.textContent = "进军下一关";
   }
   el.overlay.classList.remove("hidden");
+  updatePauseUI();
 }
 function lose() {
-  game.over = true; game.running = false;
+  game.over = true; game.running = false; game.paused = false;
   game.overlayMode = "retry";
+  el.menuList.classList.add("hidden");
   el.ovTitle.textContent = "关隘失守";
   el.ovText.textContent = "城池被攻破……整军再来，未为晚也。";
   el.ovBtn.textContent = "重整旗鼓";
+  el.ovBtn.classList.remove("hidden");
+  el.ovBtn2.classList.remove("hidden");
   el.overlay.classList.remove("hidden");
+  updatePauseUI();
 }
 function startLevel(i) {
   game.levelIndex = i;
@@ -697,26 +829,30 @@ function startLevel(i) {
   game.enemies = []; game.towers = []; game.projectiles = []; game.floaters = [];
   game.activeBonds = []; game._bondSig = null;
   game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = [];
+  game.paused = false; game.speed = 1;
   Art.clearParticles();
   game.selectedHero = null; game.selectedSlot = null;
   if (el.title) el.title.textContent = lv.name;
   el.shopBtns.forEach((b) => b.classList.remove("active"));
   renderBondPanel([]);
-  updateHUD(); updateSelInfo();
+  updateHUD(); updateSelInfo(); updatePauseUI();
 }
-function resetGame() { startLevel(0); }
 
 // ===== 主循环 =====
 function loop(now) {
   const dt = Math.min(0.05, (now - game.lastTime) / 1000 || 0);
   game.lastTime = now;
-  update(dt);
+  if (!game.paused) {
+    for (let i = 0; i < game.speed; i++) update(dt); // 加速 = 每帧多跑几步
+  }
   draw();
   requestAnimationFrame(loop);
 }
 
 // ===== 启动 =====
 Art.preloadSprites();
-resetGame();
+game.maxUnlocked = loadSave().maxUnlocked;
+startLevel(0);
+showMenu();
 el.overlay.classList.remove("hidden");
 requestAnimationFrame(loop);

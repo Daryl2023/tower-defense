@@ -22,6 +22,9 @@
           <span class="sk-name">空城计</span><span class="sk-cd"></span>
         </button>
       </span>
+      <button id="pauseBtn" class="btn btn-sm">暂停</button>
+      <button id="speedBtn" class="btn btn-sm">1x</button>
+      <button id="menuBtn" class="btn btn-sm">菜单</button>
       <span id="speedHint" class="hud-hint"></span>
     </header>
 
@@ -64,7 +67,11 @@
       <div class="overlay-card">
         <h2 id="ovTitle">三国塔防</h2>
         <p id="ovText">守住虎牢关，击退董卓大军！</p>
-        <button id="ovBtn" class="btn">开始</button>
+        <div id="menuList" class="menu-list hidden"></div>
+        <div class="overlay-btns">
+          <button id="ovBtn" class="btn">开始</button>
+          <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
+        </div>
       </div>
     </div>
   </div>
