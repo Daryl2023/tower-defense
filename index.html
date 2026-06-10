@@ -32,34 +32,19 @@
       <canvas id="game" width="960" height="600"></canvas>
 
       <aside id="shop">
-        <h3>布阵 · 蜀</h3>
-        <button class="tower-btn" data-hero="liubei">
-          <span class="tw-name">刘备 <i class="tw-fac">弓</i></span>
-          <span class="tw-desc">主公 · 远程单体</span>
-          <span class="tw-cost">军粮 60</span>
+        <h3>招贤馆 · 蜀</h3>
+        <button id="recruitBtn" class="recruit-btn">
+          <span class="rc-label">招贤</span>
+          <span class="rc-cost" id="recruitCost">军粮 30</span>
         </button>
-        <button class="tower-btn" data-hero="guanyu">
-          <span class="tw-name">关羽 <i class="tw-fac">弓</i></span>
-          <span class="tw-desc">单体 · 射速快</span>
-          <span class="tw-cost">军粮 50</span>
-        </button>
-        <button class="tower-btn" data-hero="zhangfei">
-          <span class="tw-name">张飞 <i class="tw-fac">枪</i></span>
-          <span class="tw-desc">高伤 · 近程单体</span>
-          <span class="tw-cost">军粮 70</span>
-        </button>
-        <button class="tower-btn" data-hero="zhugeliang">
-          <span class="tw-name">诸葛亮 <i class="tw-fac">谋</i></span>
-          <span class="tw-desc">火攻 · 范围溅射</span>
-          <span class="tw-cost">军粮 100</span>
-        </button>
+        <div id="candidates" class="candidates"></div>
 
         <div id="bondPanel" class="bond-panel">
           <div class="bond-title">羁绊</div>
           <div id="bondList" class="bond-list">未激活</div>
         </div>
 
-        <div id="selInfo" class="sel-info">点击空地选择塔位</div>
+        <div id="selInfo" class="sel-info">点击「招贤」抽取武将</div>
       </aside>
     </div>
 
@@ -70,12 +55,25 @@
         <div id="menuList" class="menu-list hidden"></div>
         <div class="overlay-btns">
           <button id="ovBtn" class="btn">开始</button>
+          <button id="codexBtn" class="btn btn-ghost hidden">图鉴</button>
           <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
         </div>
       </div>
     </div>
+
+    <div id="codex" class="overlay hidden">
+      <div class="overlay-card codex-card">
+        <h2>图鉴</h2>
+        <h3 class="codex-h">武将</h3>
+        <div id="codexHeroes" class="codex-list"></div>
+        <h3 class="codex-h">羁绊</h3>
+        <div id="codexBonds" class="codex-list"></div>
+        <button id="codexClose" class="btn">返回</button>
+      </div>
+    </div>
   </div>
 
+  <script src="data.js"></script>
   <script src="sprites.js"></script>
   <script src="game.js"></script>
 </body>

@@ -7,15 +7,14 @@
 
 // ---------- R6-A: 资源清单（替换入口）----------
 // img 为 null 时走程序化绘制；填入图片路径后，预加载成功即自动切换。
-const SPRITE_ASSETS = {
-  "hero:liubei":     { img: null, _image: null, _ready: false },
-  "hero:guanyu":     { img: null, _image: null, _ready: false },
-  "hero:zhangfei":   { img: null, _image: null, _ready: false },
-  "hero:zhugeliang": { img: null, _image: null, _ready: false },
-  "enemy:infantry":  { img: null, _image: null, _ready: false },
-  "enemy:cavalry":   { img: null, _image: null, _ready: false },
-  "enemy:siege":     { img: null, _image: null, _ready: false },
-};
+// 资源清单自动从 GameData 生成：每个武将/敌人一条，img=null 走程序化。
+// 替换图片：把对应 id 的 img 填成路径即可（见 docs/art-system.md §2）。
+const SPRITE_ASSETS = {};
+(function buildAssetRegistry() {
+  const heroes = (window.GameData && window.GameData.HEROES) || {};
+  for (const id in heroes) SPRITE_ASSETS["hero:" + id] = { img: null, _image: null, _ready: false };
+  for (const t of ["infantry", "cavalry", "siege"]) SPRITE_ASSETS["enemy:" + t] = { img: null, _image: null, _ready: false };
+})();
 
 function preloadSprites() {
   for (const id in SPRITE_ASSETS) {
@@ -160,6 +159,80 @@ const ProceduralSprites = {
       ctx.fillStyle = "#f4f0e4"; ctx.strokeStyle = "#c8baa0";
       ctx.beginPath(); ctx.arc(ex, ey, r * 0.42, ang - 0.7, ang + 0.7); ctx.lineTo(ex, ey); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.stroke();
+    });
+  },
+
+  // ---------- R8-2: 新增武将 ----------
+  "hero:machao"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#c0c0d0", "#e8c8a0"); // 银甲锦马超
+    // 白银盔 + 白缨
+    ctx.fillStyle = "#e8e8f0";
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.64, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#f0f0f8"; ctx.fillRect(x - r * 0.07, hy - r * 0.95, r * 0.14, r * 0.32);
+    eyes(ctx, x, hy, r);
+    // 长枪（带小旗）
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => {
+      const ex = cx + Math.cos(ang) * r * 1.25, ey = cy + Math.sin(ang) * r * 1.25;
+      ctx.strokeStyle = "#8a8a9a"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#dfe6ee";
+      ctx.beginPath(); ctx.arc(ex, ey, r * 0.16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#c83a3a"; // 红缨小旗
+      ctx.fillRect(cx + Math.cos(ang) * r * 0.5, cy + Math.sin(ang) * r * 0.5 - r * 0.2, r * 0.18, r * 0.2);
+    });
+  },
+  "hero:huangzhong"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#b87333", "#d8b088"); // 古铜老将
+    // 武盔
+    ctx.fillStyle = "#8a5a28";
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.12, r * 0.62, Math.PI, 0); ctx.fill();
+    eyes(ctx, x, hy, r);
+    // 白须（老将）
+    ctx.fillStyle = "#e8e8e0";
+    ctx.beginPath(); ctx.arc(x, hy + r * 0.4, r * 0.36, 0, Math.PI); ctx.fill();
+    // 大弓（拉满）
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => {
+      const bx = cx + Math.cos(ang) * r * 0.5, by = cy + Math.sin(ang) * r * 0.5;
+      ctx.strokeStyle = "#7a4a1a"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(bx, by, r * 0.5, ang - 1.4, ang + 1.4); ctx.stroke();
+      // 箭
+      ctx.strokeStyle = "#dfe6ee"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx + Math.cos(ang) * r * 0.6, by + Math.sin(ang) * r * 0.6); ctx.stroke();
+    });
+  },
+  "hero:pangtong"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#7a9a6a", "#e0c8a8"); // 凤雏
+    // 素巾
+    ctx.fillStyle = "#5a7a4a";
+    roundRect(ctx, x - r * 0.5, hy - r * 0.7, r, r * 0.38, 4); ctx.fill();
+    eyes(ctx, x, hy, r);
+    // 短须
+    ctx.fillStyle = "#3a2a1a";
+    ctx.beginPath(); ctx.arc(x, hy + r * 0.42, r * 0.22, 0, Math.PI); ctx.fill();
+    // 道经卷轴（范围控制）
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => {
+      const ex = cx + Math.cos(ang) * r * 0.7, ey = cy + Math.sin(ang) * r * 0.7;
+      ctx.fillStyle = "#e8dcc0";
+      ctx.save(); ctx.translate(ex, ey); ctx.rotate(ang);
+      roundRect(ctx, -r * 0.28, -r * 0.12, r * 0.56, r * 0.24, 3); ctx.fill();
+      ctx.strokeStyle = "#8a6a3a"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.restore();
+    });
+  },
+  "hero:zhaoyun"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#d8d8e8", "#e8c8a0"); // 白袍银甲
+    // 银盔 + 白龙缨
+    ctx.fillStyle = "#f0f0f8";
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.64, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#a0c8e8"; ctx.fillRect(x - r * 0.07, hy - r * 0.98, r * 0.14, r * 0.34);
+    eyes(ctx, x, hy, r);
+    // 亮银枪（带光晕，常胜将军）
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => {
+      const ex = cx + Math.cos(ang) * r * 1.3, ey = cy + Math.sin(ang) * r * 1.3;
+      ctx.strokeStyle = "#cfcfe0"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "rgba(180,200,255,0.5)"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.22, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#f0f4ff"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.12, 0, Math.PI * 2); ctx.fill();
     });
   },
 

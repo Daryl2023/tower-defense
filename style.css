@@ -160,6 +160,45 @@ body {
   vertical-align: middle;
 }
 
+/* 招贤馆 */
+.recruit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--accent);
+  color: #2a1c08;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.recruit-btn:hover:not(:disabled) { background: #d9b25c; }
+.recruit-btn:disabled { background: #6b5a3a; color: #9a8a72; cursor: default; }
+.rc-label { font-size: 16px; font-weight: 700; }
+.rc-cost { font-size: 13px; }
+
+.candidates { display: flex; flex-direction: column; gap: 8px; min-height: 4px; }
+.cand-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #34281f;
+  border: 1px solid var(--accent-dark);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.cand-card:hover:not(.cant) { border-color: var(--accent); background: #443322; }
+.cand-card.cant { opacity: 0.5; cursor: default; }
+.cand-top { display: flex; align-items: center; gap: 6px; }
+.cand-name { font-size: 15px; font-weight: 700; }
+.cand-star { font-size: 11px; color: #e8c84a; }
+.cand-trait { font-size: 11px; color: #b8a888; }
+.cand-cost { font-size: 12px; color: var(--accent); }
+.cand-cost.up { color: #6fae4a; }
+
 .bond-panel {
   background: #34281f;
   border: 1px solid var(--accent-dark);
@@ -198,3 +237,19 @@ body {
 }
 .overlay-card h2 { color: var(--accent); font-size: 28px; margin-bottom: 12px; }
 .overlay-card p { font-size: 15px; line-height: 1.7; margin-bottom: 20px; color: #d8cdb8; }
+
+/* 图鉴 */
+.codex-card { max-width: 560px; max-height: 86vh; overflow-y: auto; text-align: left; }
+.codex-card h2 { text-align: center; }
+.codex-h { color: var(--accent); font-size: 17px; margin: 14px 0 8px; border-bottom: 1px solid var(--accent-dark); padding-bottom: 4px; }
+.codex-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.codex-row {
+  display: flex; align-items: baseline; gap: 8px;
+  background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 8px 12px;
+}
+.codex-row .cx-name { font-weight: 700; font-size: 15px; min-width: 56px; }
+.codex-row .cx-star { color: #e8c84a; font-size: 12px; min-width: 40px; }
+.codex-row .cx-fac { font-size: 11px; background: var(--accent-dark); color: #1b1410; border-radius: 3px; padding: 1px 5px; }
+.codex-row .cx-desc { font-size: 12px; color: #b8a888; flex: 1; }
+.codex-row .cx-cost { font-size: 12px; color: var(--accent); }
+.codex-card .btn { display: block; margin: 16px auto 0; }

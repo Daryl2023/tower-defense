@@ -12,86 +12,17 @@ let path = [];
 let pathBlocked = new Set();
 let waves = [];
 
-// ===== 兵种原型（决定战斗方式）=====
-const ARCHETYPES = {
-  archer:     { range: 130, damage: 14, fireRate: 0.45, splash: 0,  projColor: "#e8e0c0", projSpeed: 480 },
-  spear:      { range: 85,  damage: 42, fireRate: 0.75, splash: 0,  projColor: "#d8d0b0", projSpeed: 999 },
-  strategist: { range: 115, damage: 24, fireRate: 1.05, splash: 50, projColor: "#ff8a3a", projSpeed: 420 },
-};
-
-// ===== 武将 =====
-const HEROES = {
-  liubei:     { name: "刘备",   arch: "archer",     faction: "蜀", cost: 60,  color: "#4a90c8" },
-  guanyu:     { name: "关羽",   arch: "archer",     faction: "蜀", cost: 50,  color: "#6fae4a" },
-  zhangfei:   { name: "张飞",   arch: "spear",      faction: "蜀", cost: 70,  color: "#c89a3a" },
-  zhugeliang: { name: "诸葛亮", arch: "strategist", faction: "蜀", cost: 100, color: "#c8503a" },
-};
-
-// ===== 羁绊 =====
-const BONDS = [
-  { name: "桃园结义", heroes: ["liubei", "guanyu", "zhangfei"], dmgMult: 1.25,
-    desc: "刘备·关羽·张飞同时在场，三人伤害 +25%" },
-];
-
-const UPGRADE_COST_MULT = 0.8;
-
-// ===== 计谋（主动技能）=====
-const SKILLS = {
-  fire: { name: "火计", cd: 12, radius: 78, damage: 90, targeted: true },
-  fort: { name: "空城计", cd: 18, slowDur: 4, slowMult: 0.5, targeted: false },
-};
-
-// ===== 敌军 =====
-const ENEMY_TYPES = {
-  infantry: { name: "步兵", hp: 60,  speed: 55,  reward: 5,  color: "#b8b0a0", radius: 12, castleDmg: 1 },
-  cavalry:  { name: "骑兵", hp: 40,  speed: 105, reward: 7,  color: "#d8a850", radius: 11, castleDmg: 1 },
-  siege:    { name: "攻城车", hp: 520, speed: 32, reward: 35, color: "#8a5a3a", radius: 19, castleDmg: 3 },
-};
-const HP_SCALE_PER_WAVE = 0.18;
-
-// ===== 关卡 =====
-const LEVELS = [
-  {
-    name: "虎牢关之战",
-    intro: "守住虎牢关，击退董卓大军！",
-    gold: 170, hp: 20,
-    cells: [{ c:0,r:2 },{ c:4,r:2 },{ c:4,r:7 },{ c:9,r:7 },{ c:9,r:2 },{ c:13,r:2 },{ c:13,r:7 },{ c:15,r:7 }],
-    waves: [
-      [{ type:"infantry", count:5,  gap:1.0 }],
-      [{ type:"infantry", count:8,  gap:0.8 }],
-      [{ type:"cavalry",  count:7,  gap:0.65 }],
-      [{ type:"infantry", count:10, gap:0.6 }, { type:"cavalry", count:6, gap:0.5 }],
-      [{ type:"infantry", count:14, gap:0.45 }, { type:"cavalry", count:10, gap:0.4 }],
-    ],
-  },
-  {
-    name: "官渡之战",
-    intro: "以寡敌众，火烧乌巢，正面挡住袁绍大军。",
-    gold: 180, hp: 20,
-    cells: [{ c:0,r:5 },{ c:3,r:5 },{ c:3,r:1 },{ c:8,r:1 },{ c:8,r:8 },{ c:12,r:8 },{ c:12,r:3 },{ c:15,r:3 }],
-    waves: [
-      [{ type:"infantry", count:12, gap:0.6 }],
-      [{ type:"cavalry",  count:12, gap:0.45 }],
-      [{ type:"infantry", count:14, gap:0.5 }, { type:"cavalry", count:8, gap:0.4 }],
-      [{ type:"siege",    count:1,  gap:1.0 }, { type:"infantry", count:12, gap:0.45 }],
-      [{ type:"cavalry",  count:16, gap:0.35 }, { type:"siege", count:2, gap:3.0 }],
-    ],
-  },
-  {
-    name: "赤壁之战",
-    intro: "借东风，火攻连环船，决战于大江之畔。",
-    gold: 170, hp: 18,
-    cells: [{ c:0,r:1 },{ c:6,r:1 },{ c:6,r:5 },{ c:2,r:5 },{ c:2,r:8 },{ c:11,r:8 },{ c:11,r:2 },{ c:15,r:2 }],
-    waves: [
-      [{ type:"infantry", count:14, gap:0.5 }],
-      [{ type:"cavalry",  count:16, gap:0.38 }],
-      [{ type:"siege",    count:2,  gap:2.5 }, { type:"infantry", count:14, gap:0.45 }],
-      [{ type:"cavalry",  count:18, gap:0.32 }, { type:"infantry", count:14, gap:0.4 }],
-      [{ type:"siege",    count:3,  gap:2.0 }, { type:"cavalry", count:14, gap:0.35 }],
-      [{ type:"siege",    count:4,  gap:1.6 }, { type:"infantry", count:20, gap:0.3 }, { type:"cavalry", count:14, gap:0.3 }],
-    ],
-  },
-];
+// ===== 数据配置（R8-1）：全部来自 data.js 的 window.GameData =====
+const GameData = window.GameData;
+const RARITY = GameData.RARITY;
+const ARCHETYPES = GameData.ARCHETYPES;
+const HEROES = GameData.HEROES;
+const BONDS = GameData.BONDS;
+const SKILLS = GameData.SKILLS;
+const ENEMY_TYPES = GameData.ENEMY_TYPES;
+const LEVELS = GameData.LEVELS;
+const HP_SCALE_PER_WAVE = GameData.TUNING.hpScalePerWave;
+const UPGRADE_COST_MULT = GameData.TUNING.upgradeCostMult;
 
 function loadLevel(i) {
   const lv = LEVELS[i];
@@ -128,6 +59,9 @@ const game = {
   paused: false,
   speed: 1,
   maxUnlocked: 0,
+  refreshCost: 30,
+  candidates: [],
+  pendingCost: 0,
 };
 
 // ===== 存档（R7-2）=====
@@ -169,7 +103,38 @@ const el = {
   menuBtn: document.getElementById("menuBtn"),
   shopBtns: Array.from(document.querySelectorAll(".tower-btn")),
   skillBtns: Array.from(document.querySelectorAll(".skill-btn")),
+  recruitBtn: document.getElementById("recruitBtn"),
+  recruitCost: document.getElementById("recruitCost"),
+  candidates: document.getElementById("candidates"),
+  codexBtn: document.getElementById("codexBtn"),
+  codex: document.getElementById("codex"),
+  codexHeroes: document.getElementById("codexHeroes"),
+  codexBonds: document.getElementById("codexBonds"),
+  codexClose: document.getElementById("codexClose"),
 };
+el.recruitBtn.addEventListener("click", drawRecruit);
+el.codexBtn.addEventListener("click", openCodex);
+el.codexClose.addEventListener("click", () => el.codex.classList.add("hidden"));
+
+// ===== 图鉴（R8-5）：数据来自 GameData，自动渲染 =====
+const ARCH_LABEL = { archer: "弓", spear: "枪", strategist: "谋" };
+function openCodex() {
+  el.codexHeroes.innerHTML = Object.keys(HEROES).map((id) => {
+    const h = HEROES[id];
+    return `<div class="codex-row"><span class="cx-name">${h.name}</span>` +
+      `<span class="cx-fac">${ARCH_LABEL[h.arch]}</span>` +
+      `<span class="cx-star">${RARITY[h.rarity].star}</span>` +
+      `<span class="cx-desc">${h.trait || ""}</span>` +
+      `<span class="cx-cost">招募 ${RARITY[h.rarity].deployCost}</span></div>`;
+  }).join("");
+  el.codexBonds.innerHTML = BONDS.map((b) => {
+    const names = b.heroes.map((id) => HEROES[id].name).join("·");
+    return `<div class="codex-row"><span class="cx-name">${b.name}</span>` +
+      `<span class="cx-desc">${b.desc}</span></div>` +
+      `<div style="font-size:11px;color:#8a7a62;padding:0 12px 2px">需：${names}</div>`;
+  }).join("");
+  el.codex.classList.remove("hidden");
+}
 
 // ===== 工具 =====
 function buildPathBlockSet(cells) {
@@ -189,12 +154,16 @@ function towerAt(c, r) { return game.towers.find((t) => t.c === c && t.r === r) 
 
 function towerStats(tw) {
   const a = ARCHETYPES[tw.arch];
+  const h = HEROES[tw.hero];
+  // 武将差异化倍率（默认 1），见 data.js
+  const dmgMul = h.dmgMul || 1, rangeMul = h.rangeMul || 1, rateMul = h.rateMul || 1;
+  const rawBase = (a.damage * dmgMul) + (tw.level - 1) * Math.round(a.damage * dmgMul * 0.6);
   return {
-    range: a.range + (tw.level - 1) * 12,
-    damage: Math.round((a.damage + (tw.level - 1) * Math.round(a.damage * 0.6)) * (tw.bondMult || 1)),
-    baseDamage: a.damage + (tw.level - 1) * Math.round(a.damage * 0.6),
-    fireRate: a.fireRate,
-    splash: a.splash,
+    range: Math.round((a.range * rangeMul) + (tw.level - 1) * 12),
+    damage: Math.round(rawBase * (tw.bondMult || 1)),
+    baseDamage: Math.round(rawBase),
+    fireRate: a.fireRate * rateMul / (tw.rateBondMult || 1),
+    splash: h.splash != null ? h.splash : a.splash,
     projColor: a.projColor,
     projSpeed: a.projSpeed,
   };
@@ -219,36 +188,109 @@ canvas.addEventListener("click", () => {
 
   const existing = towerAt(c, r);
   if (existing) {
-    game.selectedSlot = existing;
-    game.selectedHero = null;
-    el.shopBtns.forEach((b) => b.classList.remove("active"));
-    updateSelInfo();
-    return;
+    // 选中已有武将（升级由招贤重复抽取触发，这里仅查看/卖塔）
+    if (!game.selectedHero) { game.selectedSlot = existing; updateSelInfo(); return; }
   }
+  // 待部署武将 → 放到空地（招贤时已付招募费，这里不再扣费）
   if (!game.selectedHero) { game.selectedSlot = null; updateSelInfo(); return; }
-  if (pathBlocked.has(cellKey(c, r))) return;
+  if (existing || pathBlocked.has(cellKey(c, r))) return;
   const hero = HEROES[game.selectedHero];
-  if (game.gold < hero.cost) { flash("军粮不足"); return; }
-  game.gold -= hero.cost;
   game.towers.push({
     hero: game.selectedHero, arch: hero.arch, c, r,
     x: c * TILE + TILE / 2, y: r * TILE + TILE / 2,
-    level: 1, cooldown: 0, angle: 0, bondMult: 1, attackAnim: 1, phase: Math.random() * 6.28,
-    invested: hero.cost,
+    level: 1, cooldown: 0, angle: 0, bondMult: 1, rateBondMult: 1, attackAnim: 1, phase: Math.random() * 6.28,
+    invested: game.pendingCost || RARITY[hero.rarity].deployCost,
   });
   game.selectedSlot = game.towers[game.towers.length - 1];
+  game.selectedHero = null; game.pendingCost = 0;
   updateSelInfo();
 });
 
-el.shopBtns.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const h = btn.dataset.hero;
-    game.selectedHero = game.selectedHero === h ? null : h;
-    game.selectedSlot = null;
-    el.shopBtns.forEach((b) => b.classList.toggle("active", b === btn && game.selectedHero));
-    updateSelInfo();
+// ===== 招贤馆（R8-4）=====
+function deployCostOf(hero) { return RARITY[hero.rarity].deployCost; }
+function heroUpgradeCost(tw) { return Math.round(deployCostOf(HEROES[tw.hero]) * 0.7 * tw.level); }
+
+// 招贤池：未满级的武将（含未部署 + 已部署但未满级）
+function recruitPool() {
+  return Object.keys(HEROES).filter((id) => {
+    const tw = game.towers.find((t) => t.hero === id);
+    const maxLv = HEROES[id].maxLevel || 3;
+    return !tw || tw.level < maxLv;
   });
-});
+}
+function weightedPick(ids) {
+  let total = 0;
+  for (const id of ids) total += RARITY[HEROES[id].rarity].drawWeight;
+  let roll = Math.random() * total;
+  for (const id of ids) { roll -= RARITY[HEROES[id].rarity].drawWeight; if (roll <= 0) return id; }
+  return ids[ids.length - 1];
+}
+function drawRecruit() {
+  if (!game.running || game.over) return;
+  if (game.selectedHero) { flash("请先安置待部署武将"); return; }
+  const pool = recruitPool();
+  if (!pool.length) { flash("武将皆已满级"); return; }
+  if (game.gold < game.refreshCost) { flash("军粮不足"); return; }
+  game.gold -= game.refreshCost;
+  game.refreshCost += GameData.TUNING.recruitInc;
+  // 不放回抽 3 个
+  const avail = pool.slice();
+  const picks = [];
+  for (let i = 0; i < 3 && avail.length; i++) {
+    const id = weightedPick(avail);
+    picks.push(id);
+    avail.splice(avail.indexOf(id), 1);
+  }
+  game.candidates = picks;
+  renderCandidates();
+  updateHUD();
+}
+function selectCandidate(heroId) {
+  const hero = HEROES[heroId];
+  const existing = game.towers.find((t) => t.hero === heroId);
+  if (existing) {
+    // 重复 → 升级
+    const cost = heroUpgradeCost(existing);
+    if (game.gold < cost) { flash("军粮不足，无法升级"); return; }
+    game.gold -= cost;
+    existing.level += 1;
+    existing.invested += cost;
+    game.selectedSlot = existing;
+    flash(hero.name + " 升至 Lv." + existing.level);
+  } else {
+    // 新武将 → 付招募费，待部署
+    const cost = deployCostOf(hero);
+    if (game.gold < cost) { flash("军粮不足"); return; }
+    game.gold -= cost;
+    game.selectedHero = heroId;
+    game.pendingCost = cost;
+    flash("点击空地安置 " + hero.name);
+  }
+  game.candidates = [];
+  renderCandidates();
+  updateSelInfo();
+  updateHUD();
+}
+function renderCandidates() {
+  el.candidates.innerHTML = "";
+  for (const id of game.candidates) {
+    const hero = HEROES[id];
+    const existing = game.towers.find((t) => t.hero === id);
+    const archName = { archer: "弓", spear: "枪", strategist: "谋" }[hero.arch];
+    const cost = existing ? heroUpgradeCost(existing) : deployCostOf(hero);
+    const costLabel = existing ? `升级 ${cost}` : `招募 ${cost}`;
+    const afford = game.gold >= cost;
+    const card = document.createElement("div");
+    card.className = "cand-card" + (afford ? "" : " cant");
+    card.innerHTML =
+      `<div class="cand-top"><span class="cand-name">${hero.name}</span>` +
+      `<span class="tw-fac">${archName}</span><span class="cand-star">${RARITY[hero.rarity].star}</span></div>` +
+      `<div class="cand-trait">${hero.trait || ""}${existing ? `（当前 Lv.${existing.level}）` : ""}</div>` +
+      `<div class="cand-cost ${existing ? "up" : ""}">军粮 ${costLabel}</div>`;
+    if (afford) card.addEventListener("click", () => selectCandidate(id));
+    el.candidates.appendChild(card);
+  }
+}
 
 el.skillBtns.forEach((btn) => {
   btn.addEventListener("click", () => onSkillButton(btn.dataset.skill));
@@ -328,6 +370,7 @@ function showMenu() {
   el.menuList.classList.remove("hidden");
   el.ovBtn.classList.add("hidden");
   el.ovBtn2.classList.add("hidden");
+  el.codexBtn.classList.remove("hidden");
   renderMenuList();
   el.overlay.classList.remove("hidden");
   updatePauseUI();
@@ -353,6 +396,7 @@ function showIntro(i) {
   const lv = LEVELS[i];
   game.overlayMode = "intro";
   el.menuList.classList.add("hidden");
+  el.codexBtn.classList.add("hidden");
   el.ovTitle.textContent = lv.name;
   el.ovText.textContent = lv.intro;
   el.ovBtn.textContent = "出战";
@@ -380,29 +424,30 @@ function updatePauseUI() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "u" || e.key === "U") tryUpgrade();
+  if (e.key === "r" || e.key === "R") drawRecruit();
   if (e.key === "s" || e.key === "S") trySell();
-  if (e.key === "Escape") { game.targeting = null; updateSkillUI(); }
+  if (e.key === "Escape") cancelPending();
   if (e.key === "1") onSkillButton("fire");
   if (e.key === "2") onSkillButton("fort");
   if (e.key === " ") { e.preventDefault(); togglePause(); }
   if (e.key === "f" || e.key === "F") toggleSpeed();
 });
 
-function tryUpgrade() {
-  const t = game.selectedSlot;
-  if (!t) return;
-  const cost = upgradeCost(t);
-  if (game.gold < cost) { flash("军粮不足"); return; }
-  game.gold -= cost;
-  t.level += 1;
-  t.invested += cost;
-  updateSelInfo();
+// 取消：先撤待部署武将（退还招募费），否则取消定点计谋
+function cancelPending() {
+  if (game.selectedHero) {
+    game.gold += game.pendingCost || 0;
+    game.selectedHero = null; game.pendingCost = 0;
+    flash("已取消，退还军粮");
+    updateSelInfo();
+    return;
+  }
+  game.targeting = null; updateSkillUI();
 }
 
-// ===== 卖塔（R7-4）=====
-const SELL_REFUND_RATE = 0.6;
-function sellRefund(t) { return Math.round((t.invested || HEROES[t.hero].cost) * SELL_REFUND_RATE); }
+// ===== 卖塔 / 撤将（R7-4 / R8-4：返还招募投入 50%）=====
+const SELL_REFUND_RATE = 0.5;
+function sellRefund(t) { return Math.round((t.invested || RARITY[HEROES[t.hero].rarity].deployCost) * SELL_REFUND_RATE); }
 function trySell() {
   const t = game.selectedSlot;
   if (!t) return;
@@ -447,18 +492,20 @@ function spawnEnemy(type) {
 function recomputeBonds() {
   const present = new Set(game.towers.map((t) => t.hero));
   const active = [];
-  const buffed = new Set();
   for (const b of BONDS) {
-    if (b.heroes.every((h) => present.has(h))) {
-      active.push(b);
-      b.heroes.forEach((h) => buffed.add(h + ":" + b.dmgMult));
-    }
+    if (b.heroes.every((h) => present.has(h))) active.push(b);
   }
-  // 每个武将取其参与的最高加成
+  // 每个武将取其参与羁绊里各维度的最高加成（伤害、攻速分别取最大）
   for (const tw of game.towers) {
-    let mult = 1;
-    for (const b of active) if (b.heroes.includes(tw.hero)) mult = Math.max(mult, b.dmgMult);
-    tw.bondMult = mult;
+    let dmg = 1, rate = 1;
+    for (const b of active) {
+      if (!b.heroes.includes(tw.hero)) continue;
+      const e = b.effect || {};
+      if (e.dmgMul) dmg = Math.max(dmg, e.dmgMul);
+      if (e.rateMul) rate = Math.max(rate, e.rateMul);
+    }
+    tw.bondMult = dmg;
+    tw.rateBondMult = rate;
   }
   // 仅在变化时刷新面板
   const sig = active.map((b) => b.name).join(",");
@@ -748,6 +795,15 @@ function updateHUD() {
   else { el.startBtn.textContent = game.waveIndex < 0 ? "出战" : "下一波"; el.startBtn.disabled = false; }
   updateSkillUI();
   updatePauseUI();
+  updateRecruitUI();
+}
+
+function updateRecruitUI() {
+  if (el.recruitCost) el.recruitCost.textContent = "军粮 " + game.refreshCost;
+  if (el.recruitBtn) {
+    const poolEmpty = recruitPool().length === 0;
+    el.recruitBtn.disabled = !game.running || game.over || !!game.selectedHero || poolEmpty || game.gold < game.refreshCost;
+  }
 }
 
 function updateSkillUI() {
@@ -762,23 +818,24 @@ function updateSkillUI() {
   }
 }
 function updateSelInfo() {
+  if (game.selectedHero) {
+    const hero = HEROES[game.selectedHero];
+    el.selInfo.innerHTML = `待部署：<b>${hero.name}</b><br>点击空地安置（Esc 取消退款）`;
+    return;
+  }
   const t = game.selectedSlot;
   if (t) {
     const hero = HEROES[t.hero]; const s = towerStats(t);
+    const maxed = t.level >= (hero.maxLevel || 3);
     const bondNote = t.bondMult > 1 ? `<br><span style="color:#6fae4a">羁绊 +${Math.round((t.bondMult - 1) * 100)}%</span>` : "";
     el.selInfo.innerHTML =
-      `<b>${hero.name}</b>（${hero.faction}） Lv.${t.level}${bondNote}<br>` +
+      `<b>${hero.name}</b> ${RARITY[hero.rarity].star} Lv.${t.level}${maxed ? "（满级）" : ""}${bondNote}<br>` +
       `伤害 ${s.damage}　射程 ${s.range}<br><br>` +
-      `按 <b>U</b> 升级（军粮 ${upgradeCost(t)}）<br>` +
-      `按 <b>S</b> 拆除（返还军粮 ${sellRefund(t)}）`;
+      `${maxed ? "已满级，招贤再抽到将不再出现<br>" : "招贤再抽到此将可升级<br>"}` +
+      `按 <b>S</b> 撤将（返还军粮 ${sellRefund(t)}）`;
     return;
   }
-  if (game.selectedHero) {
-    const hero = HEROES[game.selectedHero];
-    el.selInfo.innerHTML = `选中：<b>${hero.name}</b><br>点击空地建造（军粮 ${hero.cost}）`;
-    return;
-  }
-  el.selInfo.textContent = "点击空地选择武将，或点已有武将升级";
+  el.selInfo.textContent = "点击「招贤」抽取武将，或点已有武将查看";
 }
 function flash(text) {
   el.speedHint.textContent = text;
@@ -791,6 +848,7 @@ function win() {
   game.over = true; game.running = false; game.paused = false;
   unlockLevel(game.levelIndex + 1); // 解锁下一关（R7-2）
   el.menuList.classList.add("hidden");
+  el.codexBtn.classList.add("hidden");
   el.ovBtn.classList.remove("hidden");
   el.ovBtn2.classList.remove("hidden");
   if (game.levelIndex >= LEVELS.length - 1) {
@@ -812,6 +870,7 @@ function lose() {
   game.over = true; game.running = false; game.paused = false;
   game.overlayMode = "retry";
   el.menuList.classList.add("hidden");
+  el.codexBtn.classList.add("hidden");
   el.ovTitle.textContent = "关隘失守";
   el.ovText.textContent = "城池被攻破……整军再来，未为晚也。";
   el.ovBtn.textContent = "重整旗鼓";
@@ -830,11 +889,12 @@ function startLevel(i) {
   game.activeBonds = []; game._bondSig = null;
   game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = [];
   game.paused = false; game.speed = 1;
+  game.refreshCost = GameData.TUNING.recruitBase; game.candidates = []; game.pendingCost = 0;
   Art.clearParticles();
   game.selectedHero = null; game.selectedSlot = null;
   if (el.title) el.title.textContent = lv.name;
-  el.shopBtns.forEach((b) => b.classList.remove("active"));
   renderBondPanel([]);
+  renderCandidates();
   updateHUD(); updateSelInfo(); updatePauseUI();
 }
 
