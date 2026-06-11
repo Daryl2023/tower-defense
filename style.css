@@ -178,6 +178,15 @@ body {
 .rc-cost { font-size: 13px; }
 
 .candidates { display: flex; flex-direction: column; gap: 8px; min-height: 4px; }
+.cand-portrait {
+  width: 100%;
+  max-height: 72px;
+  object-fit: contain;
+  object-position: center bottom;
+  margin-bottom: 4px;
+  background: transparent;
+  display: block;
+}
 .cand-card {
   display: flex;
   flex-direction: column;
@@ -244,8 +253,16 @@ body {
 .codex-h { color: var(--accent); font-size: 17px; margin: 14px 0 8px; border-bottom: 1px solid var(--accent-dark); padding-bottom: 4px; }
 .codex-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .codex-row {
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 8px 12px;
+}
+.cx-portrait {
+  width: 40px; height: 52px;
+  object-fit: contain;
+  object-position: center bottom;
+  flex-shrink: 0;
+  background: transparent;
+  display: block;
 }
 .codex-row .cx-name { font-weight: 700; font-size: 15px; min-width: 56px; }
 .codex-row .cx-star { color: #e8c84a; font-size: 12px; min-width: 40px; }
@@ -253,3 +270,79 @@ body {
 .codex-row .cx-desc { font-size: 12px; color: #b8a888; flex: 1; }
 .codex-row .cx-cost { font-size: 12px; color: var(--accent); }
 .codex-card .btn { display: block; margin: 16px auto 0; }
+
+/* 养成 */
+.train-tip { font-size: 12px; color: #b8a888; text-align: center; margin-bottom: 10px; }
+.train-row {
+  display: flex; align-items: center; gap: 10px;
+  background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 8px 12px;
+}
+.train-row.maxed { border-color: #6fae4a; }
+.train-info { flex: 1; min-width: 0; }
+.train-name { font-weight: 700; font-size: 15px; }
+.train-name .tr-star { color: #e8c84a; font-size: 11px; margin-left: 4px; }
+.train-meta { font-size: 12px; color: #b8a888; margin-top: 2px; }
+.train-meta .tr-rank { color: var(--accent); font-weight: 700; }
+.train-meta .tr-shard { color: #7ec8ff; }
+.train-passive { font-size: 11px; margin-top: 2px; }
+.train-passive .on { color: #6fae4a; }
+.train-passive .off { color: #9a8a72; }
+.train-up {
+  background: var(--accent); color: #2a1c08; border: none; border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; min-width: 92px;
+}
+.train-up:hover:not(:disabled) { background: #d9b25c; }
+.train-up:disabled { background: #4a3c2a; color: #8a7a62; cursor: default; }
+.train-up.maxed { background: transparent; border: 1px solid #6fae4a; color: #6fae4a; cursor: default; }
+
+/* 选将（R10） */
+.deck-card { max-width: 640px; max-height: 88vh; overflow-y: auto; }
+.deck-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 12px; }
+.deck-cell {
+  position: relative; background: #34281f; border: 2px solid var(--accent-dark); border-radius: 8px;
+  padding: 8px 6px 6px; cursor: pointer; text-align: center; transition: border-color .1s, background .1s;
+}
+.deck-cell:hover { border-color: var(--accent); }
+.deck-cell.on { border-color: #6fae4a; background: #2e3a24; }
+.deck-cell.disabled { opacity: 0.4; cursor: default; }
+.deck-cell .dk-portrait { width: 52px; height: 64px; object-fit: contain; object-position: center bottom; display: block; margin: 0 auto 2px; }
+.deck-cell .dk-name { font-size: 14px; font-weight: 700; }
+.deck-cell .dk-star { font-size: 10px; color: #e8c84a; }
+.deck-cell .dk-meta { font-size: 10px; color: var(--accent); margin-top: 2px; }
+.deck-cell .dk-pas { font-size: 10px; margin-top: 1px; color: #9a8a72; }
+.deck-cell .dk-pas.on { color: #6fae4a; }
+.deck-cell .dk-check {
+  position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; line-height: 18px;
+  border-radius: 50%; background: #6fae4a; color: #1b1410; font-size: 12px; font-weight: 700; display: none;
+}
+.deck-cell.on .dk-check { display: block; }
+.deck-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.deck-count { font-size: 14px; color: var(--accent); font-weight: 700; }
+.deck-count.full { color: #6fae4a; }
+
+/* 图鉴武将详细页（R15） */
+.codex-row.hero-row { cursor: pointer; transition: border-color .1s, background .1s; }
+.codex-row.hero-row:hover { border-color: var(--accent); background: #443322; }
+.detail-card { max-width: 520px; max-height: 88vh; overflow-y: auto; text-align: left; }
+.dt-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.dt-portrait { width: 96px; height: 120px; object-fit: contain; object-position: center bottom; flex-shrink: 0; background: #1f1812; border-radius: 8px; }
+.dt-title { flex: 1; min-width: 0; }
+.dt-name { font-size: 24px; font-weight: 700; color: var(--accent); }
+.dt-name .dt-star { font-size: 14px; color: #e8c84a; }
+.dt-sub { font-size: 13px; color: #b8a888; margin-top: 4px; }
+.dt-meta { font-size: 13px; color: #7ec8ff; margin-top: 6px; }
+.dt-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 4px 0 6px; }
+.dt-stat { display: flex; justify-content: space-between; align-items: baseline; background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 8px 12px; }
+.dt-stat span { font-size: 13px; color: #b8a888; }
+.dt-stat b { font-size: 18px; color: var(--ink); }
+.dt-tip { font-size: 11px; color: #8a7a62; margin-bottom: 8px; }
+.dt-section { color: var(--accent); font-size: 15px; font-weight: 700; margin: 12px 0 6px; border-bottom: 1px solid var(--accent-dark); padding-bottom: 4px; }
+.dt-passive { background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; color: #d8cdb8; }
+.dt-passive.on { border-color: #6fae4a; }
+.dt-passive .dt-on { color: #6fae4a; font-weight: 700; }
+.dt-passive .dt-off { color: #9a8a72; }
+.dt-bond { background: #34281f; border: 1px solid var(--accent-dark); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+.dt-bond-name { font-size: 14px; font-weight: 700; color: var(--accent); }
+.dt-bond-need { font-size: 11px; color: #8a7a62; margin-left: 8px; }
+.dt-bond-desc { font-size: 12px; color: #b8a888; margin-top: 2px; }
+.detail-card .btn { display: block; margin: 16px auto 0; }

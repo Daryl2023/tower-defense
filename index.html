@@ -55,6 +55,7 @@
         <div id="menuList" class="menu-list hidden"></div>
         <div class="overlay-btns">
           <button id="ovBtn" class="btn">开始</button>
+          <button id="trainBtn" class="btn btn-ghost hidden">养成</button>
           <button id="codexBtn" class="btn btn-ghost hidden">图鉴</button>
           <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
         </div>
@@ -64,11 +65,43 @@
     <div id="codex" class="overlay hidden">
       <div class="overlay-card codex-card">
         <h2>图鉴</h2>
+        <p class="train-tip">点击任一武将查看详细属性、技能与羁绊。</p>
         <h3 class="codex-h">武将</h3>
         <div id="codexHeroes" class="codex-list"></div>
         <h3 class="codex-h">羁绊</h3>
         <div id="codexBonds" class="codex-list"></div>
         <button id="codexClose" class="btn">返回</button>
+      </div>
+    </div>
+
+    <div id="heroDetail" class="overlay hidden">
+      <div class="overlay-card detail-card">
+        <div id="detailBody"></div>
+        <button id="detailBack" class="btn">返回图鉴</button>
+      </div>
+    </div>
+
+    <div id="train" class="overlay hidden">
+      <div class="overlay-card codex-card">
+        <h2>武将养成</h2>
+        <p class="train-tip">通关掉落专属碎片，消耗碎片永久升级；升至 Lv.3 解锁被动。</p>
+        <div id="trainList" class="codex-list"></div>
+        <button id="trainClose" class="btn">返回</button>
+      </div>
+    </div>
+
+    <div id="deck" class="overlay hidden">
+      <div class="overlay-card deck-card">
+        <h2 id="deckTitle">选将出战</h2>
+        <p id="deckIntro" class="train-tip"></p>
+        <div id="deckGrid" class="deck-grid"></div>
+        <div class="deck-foot">
+          <span id="deckCount" class="deck-count">已选 0/6</span>
+          <div class="overlay-btns">
+            <button id="deckStart" class="btn">出战</button>
+            <button id="deckBack" class="btn btn-ghost">返回</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
