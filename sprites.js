@@ -15,6 +15,8 @@ const SPRITE_ASSETS = {};
   for (const id in heroes) SPRITE_ASSETS["hero:" + id] = { img: null, _image: null, _ready: false };
   const enemies = (window.GameData && window.GameData.ENEMY_TYPES) || { infantry: 1, cavalry: 1, siege: 1 };
   for (const t in enemies) SPRITE_ASSETS["enemy:" + t] = { img: null, _image: null, _ready: false };
+  const bosses = (window.GameData && window.GameData.BOSSES) || {};
+  for (const id in bosses) SPRITE_ASSETS["boss:" + id] = { img: null, _image: null, _ready: false };
 })();
 
 // 图片资产覆盖（img=null 走程序化；可配精灵表 cols/rows/frameW/frameH + portrait）
@@ -167,6 +169,20 @@ function drawChibiBase(ctx, x, y, size, bodyColor, skinColor) {
   const hy = y - r * 0.42;
   circle(ctx, x, hy, r * 0.6, skinColor || "#f0d8b8", "rgba(0,0,0,0.35)", 2);
   return { hy, r };
+}
+
+// Boss 帅旗：背后竖一杆带字号令旗，强化「名将」存在感
+function bossBanner(ctx, x, y, size, flagColor, ch) {
+  const r = size * 0.5;
+  const px = x - r * 0.95, top = y - r * 1.55;
+  ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, y + r * 0.6); ctx.stroke();
+  ctx.fillStyle = flagColor; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1.5;
+  roundRect(ctx, px, top, r * 0.95, r * 0.7, 3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#e8d070"; ctx.font = "bold " + Math.round(r * 0.5) + "px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(ch || "将", px + r * 0.48, top + r * 0.36);
+  ctx.textBaseline = "alphabetic";
 }
 
 // ---------- R6-B: 武将程序化形象 ----------
@@ -465,6 +481,194 @@ const ProceduralSprites = {
       ctx.fillStyle = "#5a4a2a"; ctx.fillRect(-r * 0.08, -r * 0.22, r * 0.16, r * 0.2); // 弩匣
       ctx.strokeStyle = "#cfd6de"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(r * 0.28, 0); ctx.lineTo(r * 0.5, 0); ctx.stroke();
       ctx.restore();
+    });
+  },
+
+  // ---------- R17: 起始低品质武将 ----------
+  "hero:zhoucang"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#6a5a3a", "#cf9f70"); // 黝黑力士
+    ctx.fillStyle = "#3a2e1a"; // 头巾
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.12, r * 0.6, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#c83a3a"; ctx.fillRect(x - r * 0.5, hy - r * 0.2, r * 1.0, r * 0.1); // 红巾带
+    eyes(ctx, x, hy, r, true);
+    ctx.fillStyle = "#2a1810"; ctx.beginPath(); ctx.arc(x, hy + r * 0.42, r * 0.26, 0, Math.PI); ctx.fill(); // 络腮
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 扛刀（青龙刀次级）
+      const ex = cx + Math.cos(ang) * r * 1.15, ey = cy + Math.sin(ang) * r * 1.15;
+      ctx.strokeStyle = "#5a4326"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#b8c0c8"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.28, ang - 1.1, ang + 0.5); ctx.lineTo(ex, ey); ctx.fill();
+    });
+  },
+  "hero:guansuo"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#5a9a6a", "#f0d8b8"); // 绿袍少年
+    ctx.fillStyle = "#3a6a44";
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.15, r * 0.58, Math.PI, 0); ctx.fill(); // 绿巾
+    ctx.fillStyle = "#e8c84a"; ctx.fillRect(x - r * 0.05, hy - r * 0.82, r * 0.1, r * 0.22); // 小金缨
+    eyes(ctx, x, hy, r);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 弓
+      const bx = cx + Math.cos(ang) * r * 0.5, by = cy + Math.sin(ang) * r * 0.5;
+      ctx.strokeStyle = "#7a4a1a"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(bx, by, r * 0.44, ang - 1.3, ang + 1.3); ctx.stroke();
+      ctx.strokeStyle = "#dfe6ee"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx + Math.cos(ang) * r * 0.55, by + Math.sin(ang) * r * 0.55); ctx.stroke();
+    });
+  },
+  "hero:dengzhi"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#5a7a7a", "#e0c8a8"); // 青灰使者
+    ctx.fillStyle = "#3a5656";
+    roundRect(ctx, x - r * 0.5, hy - r * 0.72, r, r * 0.4, 4); ctx.fill(); // 文士巾
+    eyes(ctx, x, hy, r);
+    ctx.fillStyle = "#2a1a10"; ctx.beginPath(); ctx.arc(x, hy + r * 0.4, r * 0.18, 0, Math.PI); ctx.fill(); // 短须
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 符节（使者）
+      const ex = cx + Math.cos(ang) * r * 0.8, ey = cy + Math.sin(ang) * r * 0.8;
+      ctx.strokeStyle = "#8a6a3a"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#e8d070"; circle(ctx, ex, ey, r * 0.13, "#e8d070"); // 节旄
+      ctx.fillStyle = "#c83a3a"; ctx.fillRect(ex - r * 0.04, ey - r * 0.28, r * 0.08, r * 0.18);
+    });
+  },
+  "hero:chendao"(ctx, x, y, size, o) {
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#8a8a78", "#e8c8a0"); // 素白精兵
+    ctx.fillStyle = "#cfd0c4"; // 白盔
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.62, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#f4f4ee"; ctx.fillRect(x - r * 0.07, hy - r * 0.98, r * 0.14, r * 0.36); // 白毦缨
+    eyes(ctx, x, hy, r, true);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 长枪
+      const ex = cx + Math.cos(ang) * r * 1.25, ey = cy + Math.sin(ang) * r * 1.25;
+      ctx.strokeStyle = "#8a8478"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#eef0ea"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.14, 0, Math.PI * 2); ctx.fill();
+    });
+  },
+
+  // ---------- R16: 名将 Boss（更大体型 + 帅旗 + 深甲）----------
+  "boss:lvbu"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#7a1a1a", "吕");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#b03a3a", "#e8b890");
+    ctx.fillStyle = "#2a1a14"; // 束发冠
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.64, Math.PI, 0); ctx.fill();
+    // 雉鸡翎（飞将标志）
+    ctx.strokeStyle = "#caa84a"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(x - r * 0.2, hy - r * 0.6); ctx.quadraticCurveTo(x - r * 0.7, hy - r * 1.3, x - r * 0.4, hy - r * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + r * 0.2, hy - r * 0.6); ctx.quadraticCurveTo(x + r * 0.7, hy - r * 1.3, x + r * 0.4, hy - r * 1.5); ctx.stroke();
+    eyes(ctx, x, hy, r, true);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 方天画戟
+      const ex = cx + Math.cos(ang) * r * 1.5, ey = cy + Math.sin(ang) * r * 1.5;
+      ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#dfe6ee"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.34, ang - 1.2, ang + 0.6); ctx.lineTo(ex, ey); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, r * 0.22, ang + 1.4, ang + 2.6); ctx.lineTo(ex, ey); ctx.fill(); // 月牙侧枝
+    });
+  },
+  "boss:caocao"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#1a2a4a", "曹");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#3a4a7a", "#e8c8a0");
+    ctx.fillStyle = "#cdb24a"; // 魏王金冠
+    roundRect(ctx, x - r * 0.46, hy - r * 0.82, r * 0.92, r * 0.36, 3); ctx.fill();
+    ctx.fillStyle = "#1a1a26"; ctx.fillRect(x - r * 0.1, hy - r * 1.0, r * 0.2, r * 0.22);
+    eyes(ctx, x, hy, r, true);
+    ctx.fillStyle = "#1a1208"; ctx.beginPath(); ctx.arc(x, hy + r * 0.42, r * 0.22, 0, Math.PI); ctx.fill();
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 倚天剑
+      const ex = cx + Math.cos(ang) * r * 1.25, ey = cy + Math.sin(ang) * r * 1.25;
+      ctx.strokeStyle = "#e8eef6"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.strokeStyle = "#caa84a"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx - Math.cos(ang) * r * 0.18, cy - Math.sin(ang) * r * 0.18 - 4); ctx.lineTo(cx - Math.cos(ang) * r * 0.18, cy - Math.sin(ang) * r * 0.18 + 4); ctx.stroke();
+    });
+  },
+  "boss:xiahouyuan"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#4a3416", "夏");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#7a5a2a", "#e0c098");
+    ctx.fillStyle = "#5a4018"; // 战盔
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.64, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#caa84a"; ctx.fillRect(x - r * 0.07, hy - r * 0.96, r * 0.14, r * 0.32);
+    eyes(ctx, x, hy, r, true);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 大弓（疾射）
+      const bx = cx + Math.cos(ang) * r * 0.55, by = cy + Math.sin(ang) * r * 0.55;
+      ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.arc(bx, by, r * 0.55, ang - 1.4, ang + 1.4); ctx.stroke();
+      ctx.strokeStyle = "#dfe6ee"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx + Math.cos(ang) * r * 0.7, by + Math.sin(ang) * r * 0.7); ctx.stroke();
+    });
+  },
+  "boss:luxun"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#7a3010", "陆");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#c85a2a", "#f0d8b8"); // 火色书生
+    ctx.fillStyle = "#9a3a14";
+    roundRect(ctx, x - r * 0.5, hy - r * 0.74, r, r * 0.42, 4); ctx.fill(); // 文士巾
+    eyes(ctx, x, hy, r);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 火把令旗
+      const ex = cx + Math.cos(ang) * r * 0.85, ey = cy + Math.sin(ang) * r * 0.85;
+      ctx.strokeStyle = "#5a3a1a"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#ff7a2a"; circle(ctx, ex, ey, r * 0.2, "#ff7a2a");
+      ctx.fillStyle = "#ffd24a"; circle(ctx, ex, ey, r * 0.1, "#ffd24a");
+    });
+  },
+  "boss:caoren"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#2a361e", "曹");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#5a6a4a", "#e0c098");
+    ctx.fillStyle = "#3a4630"; // 重盔
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.08, r * 0.66, Math.PI, 0); ctx.fill();
+    eyes(ctx, x, hy, r, true);
+    ctx.fillStyle = "#15100c"; ctx.beginPath(); ctx.arc(x, hy + r * 0.44, r * 0.28, 0, Math.PI); ctx.fill();
+    // 大塔盾（铁壁）
+    ctx.fillStyle = "#8a96a2"; ctx.strokeStyle = "#2a3038"; ctx.lineWidth = 3;
+    roundRect(ctx, x - r * 1.05, y - r * 0.55, r * 0.5, r * 1.1, r * 0.12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#5a6670";
+    for (const ny of [-r * 0.3, 0, r * 0.3]) circle(ctx, x - r * 0.8, y + ny, r * 0.07, "#5a6670");
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 短戟
+      const ex = cx + Math.cos(ang) * r * 1.0, ey = cy + Math.sin(ang) * r * 1.0;
+      ctx.strokeStyle = "#3a2a1a"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#cfd6de"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.16, 0, Math.PI * 2); ctx.fill();
+    });
+  },
+  "boss:zhanghe"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#4a3e16", "張");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#8a7a3a", "#e8c8a0");
+    ctx.fillStyle = "#6a5a26";
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.1, r * 0.64, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#caa84a"; ctx.fillRect(x - r * 0.06, hy - r * 0.92, r * 0.12, r * 0.3);
+    eyes(ctx, x, hy, r, true);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 长枪（巧变）
+      const ex = cx + Math.cos(ang) * r * 1.4, ey = cy + Math.sin(ang) * r * 1.4;
+      ctx.strokeStyle = "#5a4326"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#eef2f6"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.17, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#c83a3a"; ctx.fillRect(cx + Math.cos(ang) * r * 0.6, cy + Math.sin(ang) * r * 0.6 - r * 0.22, r * 0.2, r * 0.22);
+    });
+  },
+  "boss:simayi"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#2a1e3e", "司");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#4a3a6a", "#e0c8a8"); // 冢虎紫
+    ctx.fillStyle = "#322650";
+    roundRect(ctx, x - r * 0.5, hy - r * 0.76, r, r * 0.44, 4); ctx.fill(); // 谋士高冠
+    ctx.fillStyle = "#caa84a"; ctx.fillRect(x - r * 0.5, hy - r * 0.4, r, r * 0.08);
+    eyes(ctx, x, hy, r, true);
+    ctx.fillStyle = "#16100c"; ctx.beginPath(); ctx.arc(x, hy + r * 0.42, r * 0.24, 0, Math.PI); ctx.fill();
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 持剑谋帅
+      const ex = cx + Math.cos(ang) * r * 1.2, ey = cy + Math.sin(ang) * r * 1.2;
+      ctx.strokeStyle = "#c9c2dd"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "rgba(150,120,210,0.5)"; circle(ctx, ex, ey, r * 0.18, "rgba(150,120,210,0.5)");
+    });
+  },
+  "boss:dengai"(ctx, x, y, size, o) {
+    bossBanner(ctx, x, y, size, "#3e1616", "鄧");
+    const { hy, r } = drawChibiBase(ctx, x, y, size, "#6a3a3a", "#e0c098");
+    ctx.fillStyle = "#4a2424"; // 玄铁盔
+    ctx.beginPath(); ctx.arc(x, hy - r * 0.08, r * 0.66, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#caa84a"; ctx.fillRect(x - r * 0.08, hy - r * 1.0, r * 0.16, r * 0.34); // 金缨
+    ctx.strokeStyle = "#caa84a"; ctx.lineWidth = 2; // 双角
+    ctx.beginPath(); ctx.moveTo(x - r * 0.42, hy - r * 0.5); ctx.lineTo(x - r * 0.58, hy - r * 0.9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + r * 0.42, hy - r * 0.5); ctx.lineTo(x + r * 0.58, hy - r * 0.9); ctx.stroke();
+    eyes(ctx, x, hy, r, true);
+    weapon(ctx, x, y, r, o, (cx, cy, ang) => { // 重刀
+      const ex = cx + Math.cos(ang) * r * 1.35, ey = cy + Math.sin(ang) * r * 1.35;
+      ctx.strokeStyle = "#2a1e1a"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = "#d0d8e0"; ctx.beginPath(); ctx.arc(ex, ey, r * 0.36, ang - 1.1, ang + 0.5); ctx.lineTo(ex, ey); ctx.fill();
     });
   },
 

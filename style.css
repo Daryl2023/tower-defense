@@ -90,8 +90,24 @@ body {
 
 .overlay-btns { display: flex; gap: 10px; justify-content: center; }
 
-.menu-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 56vh; overflow-y: auto; padding-right: 6px; }
 .menu-list.hidden { display: none; }
+.chapter-head {
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border-left: 3px solid var(--accent);
+  padding: 2px 0 2px 8px;
+  margin: 10px 0 2px;
+}
+.chapter-head:first-child { margin-top: 0; }
+.chapter-head.locked { color: #9a8a72; border-left-color: #6a5a3a; }
+.level-btn.boss { border-color: #b03a3a; }
+.level-btn.boss:hover:not(.locked) { border-color: #e05a4a; background: #4a2a26; }
+.level-btn .lv-boss { font-size: 12px; font-weight: 700; color: #e07a6a; margin-left: 8px; }
+.level-btn.locked .lv-boss { color: #8a6a64; }
 .level-btn {
   display: flex;
   align-items: center;
@@ -346,3 +362,14 @@ body {
 .dt-bond-need { font-size: 11px; color: #8a7a62; margin-left: 8px; }
 .dt-bond-desc { font-size: 12px; color: #b8a888; margin-top: 2px; }
 .detail-card .btn { display: block; margin: 16px auto 0; }
+
+/* 武将解锁 / 碎片招募（R17） */
+.codex-row.hero-row.locked { opacity: 0.62; }
+.codex-row .cx-cost.lock { color: #9a8a72; }
+.train-row.locked { border-color: #5a4a6a; opacity: 0.92; }
+.train-name .tr-locktag { font-size: 11px; margin-left: 6px; }
+.train-meta .tr-lock { color: #c89a6a; font-weight: 700; }
+.train-up.recruit { background: #8a6ad8; color: #f0e6ff; }
+.train-up.recruit:hover:not(:disabled) { background: #a08ae8; }
+.train-up.recruit:disabled { background: #3a3450; color: #7a7090; }
+

@@ -20,7 +20,17 @@ const HEROES = GameData.HEROES;
 const BONDS = GameData.BONDS;
 const SKILLS = GameData.SKILLS;
 const ENEMY_TYPES = GameData.ENEMY_TYPES;
+const BOSSES = GameData.BOSSES;
+const STARTERS = GameData.STARTERS;
 const LEVELS = GameData.LEVELS;
+const CHAPTERS = GameData.CHAPTERS;
+// 关卡末波是否含 Boss → 返回 boss id（无则 null）
+function levelBossId(i) {
+  const lv = LEVELS[i];
+  if (!lv || !lv.waves || !lv.waves.length) return null;
+  for (const grp of lv.waves[lv.waves.length - 1]) { if (grp && grp.boss) return grp.boss; }
+  return null;
+}
 const HP_SCALE_PER_WAVE = GameData.TUNING.hpScalePerWave;
 const UPGRADE_COST_MULT = GameData.TUNING.upgradeCostMult;
 
@@ -67,16 +77,17 @@ const game = {
 // ===== 存档（R7-2 / R9-1 扩展 shards/ranks）=====
 const SAVE_KEY = "sgtd_save_v1";
 const TUNING = GameData.TUNING;
-// 持久养成态：碎片数 + 升级等级（默认 0 / 1，loadSave 容错补默认）+ 出战阵容 deck
-const meta = { shards: {}, ranks: {}, deck: [] };
+// 持久养成态：碎片数 + 升级等级 + 出战阵容 deck + 已解锁武将 unlocked
+const meta = { shards: {}, ranks: {}, deck: [], unlocked: {} };
 const DECK_SIZE = 6;
-// 用前 DECK_SIZE 个武将补足/兜底阵容
-function defaultDeck() { return Object.keys(HEROES).slice(0, DECK_SIZE); }
-function normalizeDeck(arr) {
-  const all = Object.keys(HEROES);
-  let deck = Array.isArray(arr) ? [...new Set(arr.filter((id) => HEROES[id]))] : [];
+function unlockedIds(u) { u = u || meta.unlocked; return Object.keys(HEROES).filter((id) => u[id]); }
+function defaultDeck(u) { return unlockedIds(u).slice(0, DECK_SIZE); }
+// 弹性阵容（R17）：仅已解锁武将、去重、上限 DECK_SIZE、至少 1（空则取已解锁补足）
+function normalizeDeck(arr, u) {
+  u = u || meta.unlocked;
+  let deck = Array.isArray(arr) ? [...new Set(arr.filter((id) => HEROES[id] && u[id]))] : [];
   if (deck.length > DECK_SIZE) deck = deck.slice(0, DECK_SIZE);
-  for (const id of all) { if (deck.length >= DECK_SIZE) break; if (!deck.includes(id)) deck.push(id); }
+  if (deck.length === 0) deck = unlockedIds(u).slice(0, DECK_SIZE);
   return deck;
 }
 function loadSave() {
@@ -84,17 +95,21 @@ function loadSave() {
   try { s = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { /* 忽略损坏存档 */ }
   if (!s || typeof s !== "object") s = {};
   const maxUnlocked = typeof s.maxUnlocked === "number" ? s.maxUnlocked : 0;
-  const shards = {}, ranks = {};
+  const shards = {}, ranks = {}, unlocked = {};
+  const hasUnlocked = s.unlocked && typeof s.unlocked === "object";
   for (const id of Object.keys(HEROES)) {
     shards[id] = s.shards && typeof s.shards[id] === "number" ? s.shards[id] : 0;
     ranks[id] = s.ranks && typeof s.ranks[id] === "number" ? Math.max(1, s.ranks[id]) : 1;
+    // 解锁：有存档读存档；无 unlocked 字段则默认仅起始武将（R17）
+    unlocked[id] = hasUnlocked ? !!s.unlocked[id] : STARTERS.includes(id);
   }
-  return { maxUnlocked, shards, ranks, deck: normalizeDeck(s.deck) };
+  for (const id of STARTERS) if (HEROES[id]) unlocked[id] = true; // 起始武将始终解锁
+  return { maxUnlocked, shards, ranks, unlocked, deck: normalizeDeck(s.deck, unlocked) };
 }
 function saveProgress() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      maxUnlocked: game.maxUnlocked, shards: meta.shards, ranks: meta.ranks, deck: meta.deck,
+      maxUnlocked: game.maxUnlocked, shards: meta.shards, ranks: meta.ranks, deck: meta.deck, unlocked: meta.unlocked,
     }));
   } catch (e) { /* 隐私模式等可能失败，忽略 */ }
 }
@@ -136,6 +151,34 @@ function addShards(rewards) {
   saveProgress();
 }
 
+// ===== 解锁 / 碎片招募（R17）=====
+function isUnlocked(id) { return !!meta.unlocked[id]; }
+function recruitCost(id) { return TUNING.recruitShardCost[HEROES[id].rarity]; }
+function canRecruit(id) { return !isUnlocked(id) && heroShards(id) >= recruitCost(id); }
+function recruitHero(id) {
+  if (!canRecruit(id)) return false;
+  meta.shards[id] -= recruitCost(id);
+  meta.unlocked[id] = true;
+  if (!meta.ranks[id] || meta.ranks[id] < 1) meta.ranks[id] = 1;
+  saveProgress();
+  return true;
+}
+// 概率碎片掉落（R17）：按稀有度权重（低稀有更高）+ featured 加权，抽 draws 次各 +1
+function rollShardDrops(idx) {
+  const draws = TUNING.shardDrawsBase + Math.floor(idx * TUNING.shardDrawsPerLevel);
+  const featured = LEVELS[idx].featured;
+  const ids = Object.keys(HEROES);
+  const wOf = (id) => RARITY[HEROES[id].rarity].drawWeight + (id === featured ? TUNING.featuredWeight : 0);
+  const drops = {};
+  for (let i = 0; i < draws; i++) {
+    let total = 0; for (const id of ids) total += wOf(id);
+    let roll = Math.random() * total, chosen = ids[ids.length - 1];
+    for (const id of ids) { roll -= wOf(id); if (roll <= 0) { chosen = id; break; } }
+    drops[chosen] = (drops[chosen] || 0) + 1;
+  }
+  return drops;
+}
+
 // ===== DOM =====
 const el = {
   title: document.querySelector(".hud-title"),
@@ -155,6 +198,7 @@ const el = {
   menuList: document.getElementById("menuList"),
   pauseBtn: document.getElementById("pauseBtn"),
   speedBtn: document.getElementById("speedBtn"),
+  muteBtn: document.getElementById("muteBtn"),
   menuBtn: document.getElementById("menuBtn"),
   shopBtns: Array.from(document.querySelectorAll(".tower-btn")),
   skillBtns: Array.from(document.querySelectorAll(".skill-btn")),
@@ -190,6 +234,14 @@ el.deckStart.addEventListener("click", confirmDeck);
 el.deckBack.addEventListener("click", () => { el.deck.classList.add("hidden"); showMenu(); });
 el.detailBack.addEventListener("click", () => { el.heroDetail.classList.add("hidden"); el.codex.classList.remove("hidden"); });
 
+// ===== 音效（R12）=====
+function updateMuteUI() { if (el.muteBtn) el.muteBtn.textContent = Sfx.isMuted() ? "🔇" : "🔊"; }
+el.muteBtn.addEventListener("click", () => { Sfx.init(); Sfx.toggle(); updateMuteUI(); });
+// 首次用户手势解锁 AudioContext（浏览器自动播放策略要求）
+function unlockAudio() { Sfx.init(); updateMuteUI(); }
+window.addEventListener("pointerdown", unlockAudio, { once: true });
+window.addEventListener("keydown", unlockAudio, { once: true });
+
 // ===== 图鉴（R8-5）：数据来自 GameData，自动渲染 =====
 const ARCH_LABEL = { archer: "弓", spear: "枪", strategist: "谋" };
 function heroPortraitImg(id, cls) {
@@ -199,12 +251,16 @@ function heroPortraitImg(id, cls) {
 function openCodex() {
   el.codexHeroes.innerHTML = Object.keys(HEROES).map((id) => {
     const h = HEROES[id];
-    return `<div class="codex-row hero-row" data-id="${id}">${heroPortraitImg(id, "cx-portrait")}` +
+    const locked = !isUnlocked(id);
+    const costTag = locked
+      ? `<span class="cx-cost lock">🔒 ${recruitCost(id)} 碎招募</span>`
+      : `<span class="cx-cost">部署 ${RARITY[h.rarity].deployCost}</span>`;
+    return `<div class="codex-row hero-row ${locked ? "locked" : ""}" data-id="${id}">${heroPortraitImg(id, "cx-portrait")}` +
       `<span class="cx-name">${h.name}</span>` +
       `<span class="cx-fac">${ARCH_LABEL[h.arch]}</span>` +
       `<span class="cx-star">${RARITY[h.rarity].star}</span>` +
       `<span class="cx-desc">${h.trait || ""}</span>` +
-      `<span class="cx-cost">招募 ${RARITY[h.rarity].deployCost}</span></div>`;
+      costTag + `</div>`;
   }).join("");
   el.codexHeroes.querySelectorAll(".hero-row").forEach((row) => {
     row.addEventListener("click", () => openHeroDetail(row.dataset.id));
@@ -228,6 +284,10 @@ function openHeroDetail(id) {
   const h = HEROES[id];
   const s = computeHeroPreview(id);
   const rank = heroRank(id), sh = heroShards(id);
+  const locked = !isUnlocked(id);
+  const metaLine = locked
+    ? `<div class="dt-meta">🔒 未招募 · 需 ${recruitCost(id)} 专属碎片（当前 ${sh}）</div>`
+    : `<div class="dt-meta">永久升级 Lv.${rank}/${maxRank()}　专属碎片 ${sh}</div>`;
   const aps = (1 / s.fireRate).toFixed(2);
   const splashStr = s.splash > 0 ? s.splash : "单体";
   const pas = h.passive;
@@ -248,7 +308,7 @@ function openHeroDetail(id) {
       `<div class="dt-title">` +
         `<div class="dt-name">${h.name} <span class="dt-star">${RARITY[h.rarity].star}</span></div>` +
         `<div class="dt-sub">${h.faction}国 · ${ARCH_LABEL[h.arch]}兵 · ${h.trait || ""}</div>` +
-        `<div class="dt-meta">永久升级 Lv.${rank}/${maxRank()}　专属碎片 ${sh}</div>` +
+        metaLine +
       `</div></div>` +
     `<div class="dt-stats">` +
       `<div class="dt-stat"><span>伤害</span><b>${s.damage}</b></div>` +
@@ -268,6 +328,7 @@ function renderTrainList() {
   el.trainList.innerHTML = Object.keys(HEROES).map((id) => {
     const h = HEROES[id];
     const rank = heroRank(id), sh = heroShards(id), max = maxRank();
+    const locked = !isUnlocked(id);
     const maxed = rank >= max;
     const cost = rankUpCost(id);
     const can = canRankUp(id);
@@ -277,14 +338,23 @@ function renderTrainList() {
           ? `<span class="on"> · 已解锁</span>：${pas.desc}`
           : `<span class="off"> · Lv.${pas.unlockRank} 解锁</span>：${pas.desc}`) + `</div>`
       : "";
-    const btn = maxed
-      ? `<button class="train-up maxed" disabled>满级</button>`
-      : `<button class="train-up" data-id="${id}" ${can ? "" : "disabled"}>升级 (${cost} 碎)</button>`;
-    return `<div class="train-row ${maxed ? "maxed" : ""}">` +
+    let btn;
+    if (locked) {
+      const rc = recruitCost(id);
+      btn = `<button class="train-up recruit" data-recruit="${id}" ${canRecruit(id) ? "" : "disabled"}>招募 (${rc} 碎)</button>`;
+    } else if (maxed) {
+      btn = `<button class="train-up maxed" disabled>满级</button>`;
+    } else {
+      btn = `<button class="train-up" data-id="${id}" ${can ? "" : "disabled"}>升级 (${cost} 碎)</button>`;
+    }
+    const metaLine = locked
+      ? `<div class="train-meta"><span class="tr-lock">未招募</span> · <span class="tr-shard">碎片 ${sh}</span></div>`
+      : `<div class="train-meta"><span class="tr-rank">升级 Lv.${rank}/${max}</span> · <span class="tr-shard">碎片 ${sh}</span></div>`;
+    return `<div class="train-row ${maxed ? "maxed" : ""} ${locked ? "locked" : ""}">` +
       heroPortraitImg(id, "cx-portrait") +
       `<div class="train-info">` +
-        `<div class="train-name">${h.name}<span class="tr-star">${RARITY[h.rarity].star}</span></div>` +
-        `<div class="train-meta"><span class="tr-rank">升级 Lv.${rank}/${max}</span> · <span class="tr-shard">碎片 ${sh}</span></div>` +
+        `<div class="train-name">${h.name}<span class="tr-star">${RARITY[h.rarity].star}</span>${locked ? '<span class="tr-locktag">🔒</span>' : ""}</div>` +
+        metaLine +
         pasHtml +
       `</div>` + btn + `</div>`;
   }).join("");
@@ -292,6 +362,12 @@ function renderTrainList() {
     b.addEventListener("click", () => {
       const id = b.dataset.id;
       if (rankUp(id)) { flash(HEROES[id].name + " 升至 Lv." + heroRank(id)); renderTrainList(); }
+    });
+  });
+  el.trainList.querySelectorAll(".train-up[data-recruit]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.recruit;
+      if (recruitHero(id)) { flash("已招募 " + HEROES[id].name + "！"); Sfx.play("recruit"); renderTrainList(); }
     });
   });
 }
@@ -383,6 +459,7 @@ canvas.addEventListener("click", () => {
   });
   game.selectedSlot = game.towers[game.towers.length - 1];
   game.selectedHero = null; game.pendingCost = 0;
+  Sfx.play("place");
   updateSelInfo();
 });
 
@@ -423,6 +500,7 @@ function drawRecruit() {
     avail.splice(avail.indexOf(id), 1);
   }
   game.candidates = picks;
+  Sfx.play("recruit");
   renderCandidates();
   updateHUD();
 }
@@ -437,6 +515,7 @@ function selectCandidate(heroId) {
     existing.level += 1;
     existing.invested += cost;
     game.selectedSlot = existing;
+    Sfx.play("upgrade");
     flash(hero.name + " 升至 Lv." + existing.level);
   } else {
     // 新武将 → 付招募费，待部署
@@ -463,15 +542,25 @@ function renderCandidates() {
     const afford = game.gold >= cost;
     const card = document.createElement("div");
     card.className = "cand-card" + (afford ? "" : " cant");
+    card.dataset.cost = cost;  // R18：供 updateCandidateAfford 实时判定
     card.innerHTML =
       `${heroPortraitImg(id, "cand-portrait")}` +
       `<div class="cand-top"><span class="cand-name">${hero.name}</span>` +
       `<span class="tw-fac">${archName}</span><span class="cand-star">${RARITY[hero.rarity].star}</span></div>` +
       `<div class="cand-trait">${hero.trait || ""}${existing ? `（当前 Lv.${existing.level}）` : ""}</div>` +
       `<div class="cand-cost ${existing ? "up" : ""}">军粮 ${costLabel}</div>`;
-    if (afford) card.addEventListener("click", () => selectCandidate(id));
+    // R18：始终绑定点击（selectCandidate 自带军粮校验），军粮回升后即可选
+    card.addEventListener("click", () => selectCandidate(id));
     el.candidates.appendChild(card);
   }
+}
+// R18：军粮变化时实时刷新候选卡灰显（不重建，保留监听）
+function updateCandidateAfford() {
+  if (!el.candidates) return;
+  el.candidates.querySelectorAll(".cand-card").forEach((card) => {
+    const cost = +card.dataset.cost || 0;
+    card.classList.toggle("cant", game.gold < cost);
+  });
 }
 
 el.skillBtns.forEach((btn) => {
@@ -497,6 +586,7 @@ function castTargetedSkill(key, x, y) {
   game.targeting = null;
   if (key === "fire") {
     areaDamage(x, y, sk.radius, sk.damage);
+    Sfx.play("skill_fire");
     // 多层火焰扩散环 + 余烬
     game.blasts.push({ x, y, r0: 10, r1: sk.radius, life: 0.5, max: 0.5, color: "rgba(255,138,58,0.6)" });
     game.blasts.push({ x, y, r0: 6, r1: sk.radius * 0.7, life: 0.35, max: 0.35, color: "rgba(255,210,74,0.7)" });
@@ -511,8 +601,9 @@ function castInstantSkill(key) {
   const sk = SKILLS[key];
   game.skillReady[key] = game.time + sk.cd;
   if (key === "fort") {
+    Sfx.play("skill_fort");
     for (const en of game.enemies) {
-      en.slowUntil = game.time + sk.slowDur;
+      applySlow(en, sk.slowDur, sk.slowMult);
       Art.emitParticles(en.x, en.y, { count: 6, color: "#b8a8e8", speed: 40, life: 0.7, size: 3 });
     }
     // 紫色疑兵迷雾扩散
@@ -546,6 +637,7 @@ function showMenu() {
   game.running = false;
   game.over = false;
   game.paused = false;
+  Sfx.stopMusic();
   game.overlayMode = "menu";
   el.ovTitle.textContent = "三国塔防";
   el.ovText.textContent = "选择战场，运筹帷幄。";
@@ -558,18 +650,36 @@ function showMenu() {
   el.overlay.classList.remove("hidden");
   updatePauseUI();
 }
+function appendLevelBtn(i) {
+  const lv = LEVELS[i];
+  const locked = i > game.maxUnlocked;
+  const cleared = i < game.maxUnlocked;
+  const bossId = levelBossId(i);
+  const btn = document.createElement("button");
+  btn.className = "level-btn" + (locked ? " locked" : "") + (cleared ? " cleared" : "") + (bossId ? " boss" : "");
+  const tag = locked ? "未解锁" : cleared ? "已通关" : "可挑战";
+  const bossName = bossId && BOSSES[bossId] ? BOSSES[bossId].name : "";
+  const bossMark = bossId ? `<span class="lv-boss">⚔ ${bossName}</span>` : "";
+  btn.innerHTML = `<span class="lv-name">${i + 1}. ${lv.name}${bossMark}</span><span class="lv-tag">${tag}</span>`;
+  if (!locked) btn.addEventListener("click", () => enterLevel(i));
+  el.menuList.appendChild(btn);
+}
 function renderMenuList() {
   el.menuList.innerHTML = "";
-  LEVELS.forEach((lv, i) => {
-    const locked = i > game.maxUnlocked;
-    const cleared = i < game.maxUnlocked;
-    const btn = document.createElement("button");
-    btn.className = "level-btn" + (locked ? " locked" : "") + (cleared ? " cleared" : "");
-    const tag = locked ? "未解锁" : cleared ? "已通关" : "可挑战";
-    btn.innerHTML = `<span class="lv-name">${i + 1}. ${lv.name}</span><span class="lv-tag">${tag}</span>`;
-    if (!locked) btn.addEventListener("click", () => enterLevel(i));
-    el.menuList.appendChild(btn);
-  });
+  const grouped = new Set();
+  // 分章渲染：每章一个标题 + 区内关卡
+  if (CHAPTERS && CHAPTERS.length) {
+    CHAPTERS.forEach((ch) => {
+      const head = document.createElement("div");
+      const chLocked = ch.from > game.maxUnlocked;
+      head.className = "chapter-head" + (chLocked ? " locked" : "");
+      head.textContent = ch.name;
+      el.menuList.appendChild(head);
+      for (let i = ch.from; i <= ch.to && i < LEVELS.length; i++) { appendLevelBtn(i); grouped.add(i); }
+    });
+  }
+  // 兜底：未被任何章节覆盖的关卡（防止漏关）
+  LEVELS.forEach((lv, i) => { if (!grouped.has(i)) appendLevelBtn(i); });
 }
 function enterLevel(i) {
   startLevel(i);          // 载入关卡（不开战），背景就绪
@@ -584,12 +694,13 @@ function showDeckSelect(i) {
   const lv = LEVELS[i];
   el.overlay.classList.add("hidden");
   el.deckTitle.textContent = (i + 1) + ". " + lv.name + " · 选将出战";
-  el.deckIntro.textContent = lv.intro;
+  const fid = lv.featured;
+  el.deckIntro.textContent = lv.intro + (fid && HEROES[fid] ? `（本关「${HEROES[fid].name}」碎片掉落提升）` : "");
   renderDeckGrid();
   el.deck.classList.remove("hidden");
 }
 function renderDeckGrid() {
-  el.deckGrid.innerHTML = Object.keys(HEROES).map((id) => {
+  el.deckGrid.innerHTML = unlockedIds().map((id) => {
     const h = HEROES[id];
     const on = deckDraft.includes(id);
     const rank = heroRank(id);
@@ -608,9 +719,9 @@ function renderDeckGrid() {
     cell.addEventListener("click", () => toggleDeckCell(cell.dataset.id));
   });
   const n = deckDraft.length;
-  el.deckCount.textContent = "已选 " + n + "/" + DECK_SIZE;
+  el.deckCount.textContent = "已选 " + n + "/" + DECK_SIZE + "（至少 1）";
   el.deckCount.classList.toggle("full", n === DECK_SIZE);
-  el.deckStart.disabled = n !== DECK_SIZE;
+  el.deckStart.disabled = n < 1 || n > DECK_SIZE;
 }
 function toggleDeckCell(id) {
   const idx = deckDraft.indexOf(id);
@@ -619,12 +730,13 @@ function toggleDeckCell(id) {
   renderDeckGrid();
 }
 function confirmDeck() {
-  if (deckDraft.length !== DECK_SIZE) return;
+  if (deckDraft.length < 1 || deckDraft.length > DECK_SIZE) return;
   meta.deck = deckDraft.slice();
   saveProgress();
   el.deck.classList.add("hidden");
   game.overlayMode = null;
   game.running = true;
+  Sfx.init(); Sfx.startMusic();
   updateHUD();
 }
 
@@ -634,6 +746,7 @@ el.speedBtn.addEventListener("click", toggleSpeed);
 function togglePause() {
   if (!game.running || game.over) return;
   game.paused = !game.paused;
+  Sfx.duckMusic(game.paused);
   updatePauseUI();
 }
 function toggleSpeed() {
@@ -668,8 +781,8 @@ function cancelPending() {
   game.targeting = null; updateSkillUI();
 }
 
-// ===== 卖塔 / 撤将（R7-4 / R8-4：返还招募投入 50%）=====
-const SELL_REFUND_RATE = 0.5;
+// ===== 卖塔 / 撤将（R18：全额返还累计投入 = 部署 + 所有升级花费）=====
+const SELL_REFUND_RATE = 1.0;
 function sellRefund(t) { return Math.round((t.invested || RARITY[HEROES[t.hero].rarity].deployCost) * SELL_REFUND_RATE); }
 function trySell() {
   const t = game.selectedSlot;
@@ -689,10 +802,12 @@ function startNextWave() {
   game.waveIndex += 1;
   if (game.waveIndex >= waves.length) return;
   game.betweenWaves = false;
+  Sfx.play("wave_start");
   const groups = waves[game.waveIndex];
   const queue = [];
   let t = 0;
   for (const g of groups) {
+    if (g.boss) { queue.push({ boss: g.boss, at: t }); t += 1.2; continue; } // 末波名将
     for (let i = 0; i < g.count; i++) { queue.push({ type: g.type, at: t }); t += g.gap; }
   }
   game.spawnQueue = queue;
@@ -700,17 +815,102 @@ function startNextWave() {
   updateHUD();
 }
 
-function spawnEnemy(type) {
+function spawnEnemy(type, pos) {
   const def = ENEMY_TYPES[type];
   const scale = 1 + game.waveIndex * HP_SCALE_PER_WAVE;
   game.enemies.push({
-    type, x: path[0].x, y: path[0].y,
+    type, spriteKey: "enemy:" + type,
+    x: pos ? pos.x : path[0].x, y: pos ? pos.y : path[0].y,
     hp: def.hp * scale, maxHp: def.hp * scale,
     speed: def.speed, reward: def.reward, radius: def.radius, color: def.color,
-    castleDmg: def.castleDmg, seg: 0, walk: Math.random() * 6.28, hitFlash: 0,
+    castleDmg: def.castleDmg, seg: pos ? pos.seg : 0, walk: Math.random() * 6.28, hitFlash: 0,
     armor: def.armor || 0,
     heal: def.heal || 0, healRadius: def.healRadius || 0, healCd: def.healCd || 0, healTimer: def.healCd || 0,
+    _auraSpeed: 1, _auraArmor: 0,
   });
+}
+
+// 生成名将 Boss（R16）：固定血、不随波缩放、携带能力引擎
+function spawnBoss(id) {
+  const def = BOSSES[id];
+  if (!def) return;
+  const en = {
+    type: "boss", bossId: id, boss: true, name: def.name, title: def.title || "",
+    spriteKey: "boss:" + id,
+    x: path[0].x, y: path[0].y,
+    hp: def.hp, maxHp: def.hp,
+    speed: def.speed, reward: def.reward, radius: def.radius, color: def.color,
+    castleDmg: def.castleDmg, shardBonus: def.shardBonus || 0,
+    seg: 0, walk: Math.random() * 6.28, hitFlash: 0,
+    armor: def.armor || 0,
+    heal: 0, healRadius: 0, healCd: 0, healTimer: 0,
+    abilities: def.abilities, abilTimers: def.abilities.map((ab) => ab.everySec || 0),
+    controlResist: 1, dmgReduction: 0, _enraged: false, _auraSpeed: 1, _auraArmor: 0,
+  };
+  for (const ab of def.abilities) if (ab.type === "resist") en.controlResist = ab.control;
+  game.enemies.push(en);
+  flash("⚔ 名将「" + def.name + "」现身！");
+  Sfx.play("wave_start");
+}
+
+// ===== 名将 Boss 能力引擎（R16）=====
+function processBosses(dt) {
+  // 每帧清零光环临时量（所有敌人）
+  for (const en of game.enemies) { en._auraSpeed = 1; en._auraArmor = 0; }
+  const bosses = game.enemies.filter((e) => e.boss && e.hp > 0);
+  if (!bosses.length) return;
+  for (const b of bosses) {
+    for (let i = 0; i < b.abilities.length; i++) {
+      const ab = b.abilities[i];
+      if (ab.type === "aura") {
+        for (const en of game.enemies) {
+          if (en === b || en.hp <= 0) continue;
+          if (distance(b.x, b.y, en.x, en.y) > ab.radius) continue;
+          if (ab.speedMul) en._auraSpeed = Math.max(en._auraSpeed, ab.speedMul);
+          if (ab.armorBonus) en._auraArmor = Math.max(en._auraArmor, ab.armorBonus);
+        }
+      } else if (ab.type === "charge") {
+        b.abilTimers[i] -= dt;
+        if (b.abilTimers[i] <= 0) {
+          b.abilTimers[i] = ab.everySec;
+          b.chargeUntil = game.time + ab.dur; b.chargeMul = ab.speedMul;
+          Art.emitParticles(b.x, b.y, { count: 16, color: "#e0c060", speed: 130, life: 0.5, size: 4, gravity: 30 });
+          game.floaters.push({ x: b.x, y: b.y - b.radius - 16, text: b.name + "·冲锋!", life: 0.8, color: "#ffd24a" });
+        }
+      } else if (ab.type === "rally") {
+        b.abilTimers[i] -= dt;
+        if (b.abilTimers[i] <= 0) {
+          b.abilTimers[i] = ab.everySec;
+          for (let k = 0; k < ab.count; k++) spawnEnemy(ab.summon, { x: b.x, y: b.y, seg: b.seg });
+          game.blasts.push({ x: b.x, y: b.y, r0: 6, r1: 52, life: 0.3, max: 0.3, color: "rgba(220,180,80,0.4)" });
+          game.floaters.push({ x: b.x, y: b.y - b.radius - 16, text: b.name + "·召唤!", life: 0.8, color: "#ffd24a" });
+        }
+      } else if (ab.type === "regen") {
+        if (b.hp > 0 && b.hp < b.maxHp) b.hp = Math.min(b.maxHp, b.hp + ab.perSec * dt);
+      } else if (ab.type === "enrage") {
+        if (!b._enraged && b.hp <= b.maxHp * ab.hpPct) {
+          b._enraged = true;
+          b.enrageSpeed = ab.speedMul || 1;
+          b.dmgReduction = ab.dmgReduction || 0;
+          game.blasts.push({ x: b.x, y: b.y, r0: 6, r1: b.radius * 3, life: 0.5, max: 0.5, color: "rgba(220,60,60,0.5)" });
+          Art.emitParticles(b.x, b.y, { count: 24, color: "#ff4a4a", speed: 150, life: 0.6, size: 4 });
+          game.floaters.push({ x: b.x, y: b.y - b.radius - 16, text: b.name + "·狂暴!", life: 1.0, color: "#ff5a5a" });
+        }
+      }
+    }
+  }
+}
+// 控制施加（统一走抗性缩放）：boss controlResist<1 缩短、=0 免疫
+function applyStun(en, dur) {
+  const r = en.controlResist != null ? en.controlResist : 1;
+  if (r <= 0) return;
+  en.stunUntil = Math.max(en.stunUntil || 0, game.time + dur * r);
+}
+function applySlow(en, dur, mult) {
+  const r = en.controlResist != null ? en.controlResist : 1;
+  if (r <= 0) return;
+  en.slowUntil = Math.max(en.slowUntil || 0, game.time + dur * r);
+  en.slowMult = mult;
 }
 
 // ===== 羁绊计算 =====
@@ -771,9 +971,12 @@ function update(dt) {
   if (!game.betweenWaves && game.spawnQueue.length) {
     game.spawnTimer += dt;
     while (game.spawnQueue.length && game.spawnTimer >= game.spawnQueue[0].at) {
-      spawnEnemy(game.spawnQueue.shift().type);
+      const it = game.spawnQueue.shift();
+      if (it.boss) spawnBoss(it.boss); else spawnEnemy(it.type);
     }
   }
+
+  processBosses(dt); // R16 名将能力引擎（光环/冲锋/召唤/狂暴/自愈），须在移动前
 
   for (const en of game.enemies) {
     if (en.hp <= 0) continue;
@@ -783,7 +986,12 @@ function update(dt) {
     const d = Math.hypot(dx, dy);
     const stunned = game.time < (en.stunUntil || 0);
     const slow = game.time < (en.slowUntil || 0) ? (en.slowMult || SKILLS.fort.slowMult) : 1;
-    const step = stunned ? 0 : en.speed * slow * dt;
+    let factor = slow * (en._auraSpeed || 1);
+    if (en.boss) {
+      if (game.time < (en.chargeUntil || 0)) factor *= en.chargeMul || 1;
+      if (en._enraged) factor *= en.enrageSpeed || 1;
+    }
+    const step = stunned ? 0 : en.speed * factor * dt;
     en.walk += step * 0.08;
     if (en.hitFlash > 0) en.hitFlash -= dt;
     if (step > 0 && d <= step) { en.x = target.x; en.y = target.y; en.seg += 1; }
@@ -822,6 +1030,7 @@ function update(dt) {
       if (tw.cooldown <= 0) {
         tw.cooldown = s.fireRate;
         tw.attackAnim = 0; // 触发攻击动作
+        Sfx.play("fire_" + tw.arch);
         if (s.projSpeed >= 999) {
           // 枪兵：瞬时命中 + 枪刺火花
           Art.emitParticles(target.x, target.y, { count: 8, color: "#ffe0a0", speed: 90, life: 0.3, size: 2.5 });
@@ -899,15 +1108,15 @@ function resolveHit(tw, target, ix, iy, baseDamage, splash, range) {
   if (splash > 0) areaDamageBy(ix, iy, splash, dmg, tw, null);
   else if (target && target.hp > 0) damageBy(target, dmg, tw);
   if (crit && target) game.floaters.push({ x: target.x, y: target.y - 10, text: "暴击!", life: 0.7, color: "#ffd24a" });
+  if (crit) Sfx.play("crit");
   // onHit 对主目标附加控制/溅射
   if (p && p.type === "onHit" && target && target.hp > 0) {
     if (p.params.stunChance && Math.random() < p.params.stunChance) {
-      target.stunUntil = game.time + p.params.stunDur;
+      applyStun(target, p.params.stunDur);
       Art.emitParticles(target.x, target.y - 8, { count: 6, color: "#ffe066", speed: 50, life: 0.5, size: 3 });
     }
     if (p.params.slowDur) {
-      target.slowUntil = Math.max(target.slowUntil || 0, game.time + p.params.slowDur);
-      target.slowMult = p.params.slowMult;
+      applySlow(target, p.params.slowDur, p.params.slowMult);
       Art.emitParticles(target.x, target.y, { count: 5, color: "#7ec8ff", speed: 40, life: 0.5, size: 3 });
     }
     if (p.params.splashRadius) { // 赵云 龙胆：攻击附带小范围溅射
@@ -922,6 +1131,7 @@ function resolveHit(tw, target, ix, iy, baseDamage, splash, range) {
     // 马岱 追斩：残血直接斩杀
     if (p.params.execute && target.hp > 0 && target.hp <= target.maxHp * p.params.execute) {
       target.hp = 0;
+      Sfx.play("execute");
       game.floaters.push({ x: target.x, y: target.y - 10, text: "斩!", life: 0.7, color: "#ff5a5a" });
       Art.emitParticles(target.x, target.y, { count: 14, color: "#ff5a5a", speed: 120, life: 0.5, size: 4 });
       onEnemyKilled(target, tw);
@@ -939,17 +1149,29 @@ function areaDamageBy(x, y, radius, amount, tw, exclude) {
 function damage(en, amount) { damageBy(en, amount, null); }
 function damageBy(en, amount, tw) {
   const wasAlive = en.hp > 0;
-  // 护甲减伤（盾兵）：每次受击固定减免，最低保留 1 点
-  const eff = en.armor ? Math.max(1, amount - en.armor) : amount;
+  // 护甲减伤（盾兵 + Boss 光环临时护甲）：每次受击固定减免，最低保留 1 点
+  const armor = (en.armor || 0) + (en._auraArmor || 0);
+  let eff = armor ? Math.max(1, amount - armor) : amount;
+  // Boss 狂暴减伤
+  if (en.dmgReduction) eff = Math.max(1, Math.round(eff * (1 - en.dmgReduction)));
   en.hp -= eff;
   en.hitFlash = 0.12; // 受击白闪
   if (wasAlive && en.hp <= 0) onEnemyKilled(en, tw);
 }
 function onEnemyKilled(en, tw) {
   game.gold += en.reward;
+  Sfx.play("kill");
   game.floaters.push({ x: en.x, y: en.y, text: "+" + en.reward, life: 0.8, color: "#c8a04a" });
   // 死亡消散粒子
   Art.emitParticles(en.x, en.y, { count: 12, color: en.color, speed: 80, life: 0.5, size: 3, gravity: 30 });
+  // 名将 Boss 授首（R16）：盛大特效 + 记录 featured 碎片奖励（结算并入掉落）
+  if (en.boss) {
+    game._bossBonus = (game._bossBonus || 0) + (en.shardBonus || 0);
+    Sfx.play("win");
+    game.floaters.push({ x: en.x, y: en.y - 18, text: "名将「" + en.name + "」授首！", life: 1.5, color: "#ffd24a" });
+    Art.emitParticles(en.x, en.y, { count: 40, color: "#ffd24a", speed: 170, life: 0.8, size: 5, gravity: 30 });
+    game.blasts.push({ x: en.x, y: en.y, r0: 8, r1: en.radius * 4, life: 0.6, max: 0.6, color: "rgba(255,210,74,0.4)" });
+  }
   // onKill·诸葛亮 八阵图：击杀触发二次小爆
   if (tw && passiveUnlocked(tw.hero)) {
     const p = HEROES[tw.hero].passive;
@@ -971,6 +1193,7 @@ function spawnHitFx(x, y, color) {
 function reachCastle(en) {
   en.reached = true;
   const dmg = en.castleDmg || 1;
+  Sfx.play("castle_hit");
   game.hp = Math.max(0, game.hp - dmg);
   game.floaters.push({ x: canvas.width - 40, y: path[path.length - 1].y, text: "-" + dmg, life: 1, color: "#d4503a" });
   if (game.hp <= 0) lose();
@@ -990,6 +1213,7 @@ function draw() {
   drawFloaters();
   drawHover();
   drawTargeting();
+  drawBossBar();
   if (game.paused && game.running) {
     ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#f0e6d2"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
@@ -1006,6 +1230,25 @@ function drawBlasts() {
     ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1;
   }
+}
+
+// 名将 Boss 顶部专属血条（R16）
+function drawBossBar() {
+  const b = game.enemies.find((e) => e.boss && e.hp > 0);
+  if (!b) return;
+  const w = 440, h = 18, x = (canvas.width - w) / 2, y = 16;
+  const pct = Math.max(0, b.hp / b.maxHp);
+  ctx.fillStyle = "rgba(20,12,8,0.72)"; ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
+  ctx.fillStyle = "#3a2018"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = pct > 0.5 ? "#d4503a" : pct > 0.25 ? "#d87a2a" : "#a02828";
+  ctx.fillRect(x, y, w * pct, h);
+  ctx.strokeStyle = "#caa84a"; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = "#ffe6a0"; ctx.font = "bold 13px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("⚔ " + b.name + (b.title ? " · " + b.title : "") + "　" + Math.ceil(b.hp) + "/" + b.maxHp,
+    canvas.width / 2, y + h / 2);
+  if (b._enraged) { ctx.fillStyle = "#ff6a6a"; ctx.fillText("狂暴", x + w + 28, y + h / 2); }
+  ctx.textBaseline = "alphabetic";
 }
 
 function drawTargeting() {
@@ -1076,9 +1319,17 @@ function drawEnemies() {
     // 阴影
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.beginPath(); ctx.ellipse(en.x, en.y + en.radius * 0.7, en.radius * 0.8, en.radius * 0.3, 0, 0, Math.PI * 2); ctx.fill();
-    Art.drawSprite(ctx, "enemy:" + en.type, en.x, en.y, {
+    if (en.boss) {
+      ctx.strokeStyle = "rgba(255,210,74,0.55)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(en.x, en.y + en.radius * 0.7, en.radius * 1.1, en.radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    Art.drawSprite(ctx, en.spriteKey || ("enemy:" + en.type), en.x, en.y, {
       size, walk: en.walk, flashAlpha: en.hitFlash > 0 ? en.hitFlash / 0.12 * 0.7 : 0,
     });
+    if (en.boss) {
+      ctx.fillStyle = "#ffd24a"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(en.name, en.x, en.y - en.radius - 18);
+    }
     const w = en.radius * 2, pct = Math.max(0, en.hp / en.maxHp);
     ctx.fillStyle = "#000"; ctx.fillRect(en.x - w / 2, en.y - en.radius - 12, w, 4);
     ctx.fillStyle = pct > 0.5 ? "#6fae4a" : pct > 0.25 ? "#d8a850" : "#d4503a";
@@ -1149,6 +1400,7 @@ function updateHUD() {
   updateSkillUI();
   updatePauseUI();
   updateRecruitUI();
+  updateCandidateAfford();
 }
 
 function updateRecruitUI() {
@@ -1194,7 +1446,7 @@ function updateSelInfo() {
       `<b>${hero.name}</b> ${RARITY[hero.rarity].star} Lv.${t.level}${maxed ? "（满级）" : ""}${bondNote}${auraNote}${rankNote}${pasNote}<br>` +
       `伤害 ${s.damage}　射程 ${s.range}<br><br>` +
       `${maxed ? "已满级，招贤再抽到将不再出现<br>" : "招贤再抽到此将可升级<br>"}` +
-      `按 <b>S</b> 撤将（返还军粮 ${sellRefund(t)}）`;
+      `按 <b>S</b> 撤将（全额返还军粮 ${sellRefund(t)}）`;
     return;
   }
   el.selInfo.textContent = "点击「招贤」抽取武将，或点已有武将查看";
@@ -1208,12 +1460,17 @@ function flash(text) {
 // ===== 胜负 =====
 function win() {
   game.over = true; game.running = false; game.paused = false;
+  Sfx.stopMusic(); Sfx.play("win");
   unlockLevel(game.levelIndex + 1); // 解锁下一关（R7-2）
-  // 通关碎片奖励（R9-6）：写入永久存档
-  const rewards = LEVELS[game.levelIndex].shardRewards;
-  addShards(rewards);
-  const shardLine = rewards
-    ? "　战利：" + Object.keys(rewards).map((id) => `${HEROES[id].name}碎片×${rewards[id]}`).join("、")
+  // 通关碎片奖励（R17）：按稀有度概率掉落，featured 提升；Boss 额外补 featured 碎片
+  const idx = game.levelIndex;
+  const featured = LEVELS[idx].featured;
+  const drops = rollShardDrops(idx);
+  if (game._bossBonus && featured && HEROES[featured]) drops[featured] = (drops[featured] || 0) + game._bossBonus;
+  addShards(drops);
+  const dn = Object.keys(drops);
+  const shardLine = dn.length
+    ? "　战利碎片：" + dn.map((id) => `${HEROES[id].name}×${drops[id]}`).join("、")
     : "";
   el.menuList.classList.add("hidden");
   el.codexBtn.classList.add("hidden");
@@ -1236,6 +1493,7 @@ function win() {
 }
 function lose() {
   game.over = true; game.running = false; game.paused = false;
+  Sfx.stopMusic(); Sfx.play("lose");
   game.overlayMode = "retry";
   el.menuList.classList.add("hidden");
   el.codexBtn.classList.add("hidden");
@@ -1256,6 +1514,7 @@ function startLevel(i) {
   game.enemies = []; game.towers = []; game.projectiles = []; game.floaters = [];
   game.activeBonds = []; game._bondSig = null;
   game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = [];
+  game._bossBonus = 0;
   game.paused = false; game.speed = 1;
   game.refreshCost = GameData.TUNING.recruitBase; game.candidates = []; game.pendingCost = 0;
   Art.clearParticles();
@@ -1284,7 +1543,9 @@ game.maxUnlocked = _save.maxUnlocked;
 meta.shards = _save.shards;
 meta.ranks = _save.ranks;
 meta.deck = _save.deck;
+meta.unlocked = _save.unlocked;
 startLevel(0);
 showMenu();
+updateMuteUI();
 el.overlay.classList.remove("hidden");
 requestAnimationFrame(loop);
