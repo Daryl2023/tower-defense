@@ -14,6 +14,7 @@
 | `docs/expansion-v2.md` | 内容扩充：+10 蜀将 + 新羁绊 + +10 关卡 + 图鉴详细页 | R13 / R14 / R15 |
 | `docs/audio-system.md` | 音效与打击感：Web Audio 程序化音效 + BGM + 静音开关 | R12 |
 | `docs/bosses-and-unlock.md` | 名将 Boss（能力引擎）+ 武将解锁/碎片招募 + 起始武将 + 弹性阵容 | R16 / R17 |
+| `docs/ui-scenes.md` | UI 场景状态机 + 真·主界面（重度程序化背景）+ 弹窗全面场景化 | R19 |
 
 > 文档拆分说明：R6、R8 设计内容较多，已按「文档拆分」规则拆至 `docs/` 子文档；本文档保留总览与全局进度表。
 
@@ -84,6 +85,12 @@
 
 **R17 武将解锁与碎片招募（已完成，详见 `docs/bosses-and-unlock.md`）**：新增 4 起始 1★ 武将，开局仅 5 将；通关概率掉落全武将碎片（低稀有更高、featured 提升）；碎片招募解锁锁定武将；弹性出战阵容 1~6。
 
+**R19 UI 场景化 + 真·主界面（已完成，详见 `docs/ui-scenes.md`）**：把「战场常驻 + 弹窗叠加」的伪场景改造为真正的场景状态机。
+- 用户决策：重度程序化背景（新画三国关隘图）/ 养成·图鉴等弹窗全部升级为独立全屏场景 / 逐阶段验收。
+- 新增 `game.scene` + `switchScene()`，场景：home / levelSelect / deck / battle / barracks / codex；战中开战提示·结算·重试仍用 `#overlay`。
+- 主界面：程序化关隘背景（远山/城楼/军旗/火把 + 轻动画）+ 标题 + 主按钮 + 存档概览条（通关进度 / 武将解锁数 X/22 / 「继续」快捷入口）。
+- 分三期：R19-1 场景骨架 → R19-2 主界面 → R19-3 养成/图鉴场景化。子任务见进度表。
+
 **R18 体验优化（QoL，已完成）**：试玩反馈修复与章节化。
 - **章节化关卡选择**：16 关按战役线分 5 章（每章末关为 Boss 关），关卡列表分区显示并可滚动，修复列表过长溢出导致底部按钮（图鉴/养成）点不到的问题。`data.js` 新增 `CHAPTERS`，`game.js renderMenuList` 分章渲染，`style.css` 加分区标题 + `.menu-list` 滚动。
 - **招贤候选可重新激活**：候选卡此前仅在渲染瞬间军粮足够才绑定点击；军粮回升后仍点不动。改为始终可点（`selectCandidate` 自带军粮校验），并在 HUD 刷新时实时切换 `.cant` 灰显。
@@ -150,6 +157,10 @@
 | R18-2 | 招贤候选可重新激活 | ✅ | ✅ 完成 | game.js (renderCandidates/updateCandidateAfford) | 始终可点 + HUD 实时灰显，军粮回升后可选 |
 | R18-3 | 招贤刷新费增长放缓 | ✅ | ✅ 完成 | data.js (TUNING.recruitInc 12→6) | 25,31,37… |
 | R18-4 | 出售全额计入升级费 | ✅ | ✅ 完成 | game.js (sellRefund) | 返还 = 部署+所有升级累计投入（100%） |
+| R19-0 | 设计文档（场景化/主界面） | ✅ | ✅ 完成 | docs/ui-scenes.md + DESIGN.md | 场景状态机、主界面、分期、验收标准 |
+| R19-1 | 场景骨架 + 关卡选择/选将/战场迁移 | ✅ | ✅ 完成 | index.html + game.js + style.css | game.scene/switchScene；HUD+stage 打包 battle；功能零丢失 |
+| R19-2 | 主界面 home（重度背景+概览条） | ✅ | ✅ 完成 | sprites.js + index.html + game.js + style.css | 程序化关隘背景+轻动画；标题/按钮；通关进度/解锁数/继续 |
+| R19-3 | 养成/图鉴弹窗 → 独立场景 | ✅ | ✅ 完成 | index.html + game.js + style.css | train/codex 场景化；heroDetail 子视图；返回导航统一（sceneReturn） |
 
 ## 五、测试进度
 
@@ -199,6 +210,9 @@
 | R18-2 | 招贤候选可重新激活 | MCP 驱动断言 | ✅ 完成 | 通过 | 军粮 0 时 3 卡全 .cant；军粮回升+updateHUD 后全 .cant=false（实时）；点击此前禁用卡成功选将、候选清空 |
 | R18-3 | 招贤刷新费增长放缓 | 脚本断言 | ✅ 完成 | 通过 | recruitInc 6；进程 25,31,37,43,49,55（替代 25,37,49…） |
 | R18-4 | 出售全额计入升级费 | MCP 实战断言 | ✅ 完成 | 通过 | guansuo 部署 40+两次升级=投入 124；售价显示 124（全额）；卖出军粮 +124，含全部升级 |
+| R19-1 | 场景骨架 + 链路迁移 | MCP 实测 + DOM 校验 | ✅ 完成 | 通过 | 落地 levels 场景（5 章/16 关/8 Boss 标记）；enter→deck→battle（canvas 265 采样在绘制，招贤扣 25 抽 3）→菜单回 levels；codex 22 行/train 弹窗仍可开；零游戏报错 |
+| R19-2 | 主界面 + 背景 + 概览条 | MCP 实测 + canvas 导出 | ✅ 完成 | 通过 | 落地 home（背景 922 采样在绘制：暮色天/远山/城楼/帥旗/火把）；概览「战役进度 第二章 第6/16关 · 武将 6/22 · 继续：夷陵之战」；开始→levels/返回→home/继续→deck/养成·图鉴弹窗/菜单→home 全通；零报错 |
+| R19-3 | 养成/图鉴场景化 | MCP 实测 + DOM 校验 | ✅ 完成 | 通过 | home/levels→图鉴(codex 场景 22 行)→点将→详情子视图(列表隐藏/detailBody 充实/仍在 codex)→返回列表→返回来源；养成(barracks 22 行)同链；sceneReturn 正确回 home/levels；codex 卡 560×607 入屏；零报错 |
 
 ---
 

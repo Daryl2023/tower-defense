@@ -8,91 +8,43 @@
 </head>
 <body>
   <div id="app">
-    <header id="hud">
-      <span class="hud-title">虎牢关之战</span>
-      <span class="hud-item">军粮 <b id="gold">0</b></span>
-      <span class="hud-item">城池 <b id="hp">0</b></span>
-      <span class="hud-item">波次 <b id="wave">0</b>/<b id="waveTotal">0</b></span>
-      <button id="startBtn" class="btn">出战</button>
-      <span class="skillbar">
-        <button id="skillFire" class="skill-btn" data-skill="fire">
-          <span class="sk-name">火计</span><span class="sk-cd"></span>
-        </button>
-        <button id="skillFort" class="skill-btn" data-skill="fort">
-          <span class="sk-name">空城计</span><span class="sk-cd"></span>
-        </button>
-      </span>
-      <button id="pauseBtn" class="btn btn-sm">暂停</button>
-      <button id="speedBtn" class="btn btn-sm">1x</button>
-      <button id="muteBtn" class="btn btn-sm" title="音效开关">🔊</button>
-      <button id="menuBtn" class="btn btn-sm">菜单</button>
-      <span id="speedHint" class="hud-hint"></span>
-    </header>
 
-    <div id="stage">
-      <canvas id="game" width="960" height="600"></canvas>
-
-      <aside id="shop">
-        <h3>招贤馆 · 蜀</h3>
-        <button id="recruitBtn" class="recruit-btn">
-          <span class="rc-label">招贤</span>
-          <span class="rc-cost" id="recruitCost">军粮 30</span>
-        </button>
-        <div id="candidates" class="candidates"></div>
-
-        <div id="bondPanel" class="bond-panel">
-          <div class="bond-title">羁绊</div>
-          <div id="bondList" class="bond-list">未激活</div>
+    <!-- ===== 场景：主界面（R19）===== -->
+    <section id="sceneHome" class="scene">
+      <canvas id="homeCanvas" class="home-bg" width="1280" height="720"></canvas>
+      <div class="home-ui">
+        <div class="home-top">
+          <h1 class="home-title">三国塔防</h1>
+          <p class="home-tagline">运筹帷幄之中，决胜千里之外</p>
         </div>
+        <div class="home-bottom">
+          <div id="homeOverview" class="home-overview"></div>
+          <div class="home-actions">
+            <button id="homeStart" class="btn home-btn-main">开始游戏</button>
+            <button id="homeTrain" class="btn btn-ghost">养成</button>
+            <button id="homeCodex" class="btn btn-ghost">图鉴</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        <div id="selInfo" class="sel-info">点击「招贤」抽取武将</div>
-      </aside>
-    </div>
-
-    <div id="overlay" class="overlay hidden">
-      <div class="overlay-card">
-        <h2 id="ovTitle">三国塔防</h2>
-        <p id="ovText">守住虎牢关，击退董卓大军！</p>
-        <div id="menuList" class="menu-list hidden"></div>
+    <!-- ===== 场景：关卡选择（R19）===== -->
+    <section id="sceneLevels" class="scene">
+      <div class="scene-card levels-wrap">
+        <h1 class="scene-title">三国塔防</h1>
+        <p class="scene-sub">选择战场，运筹帷幄。</p>
+        <div id="menuList" class="menu-list"></div>
         <div class="overlay-btns">
-          <button id="ovBtn" class="btn">开始</button>
-          <button id="trainBtn" class="btn btn-ghost hidden">养成</button>
-          <button id="codexBtn" class="btn btn-ghost hidden">图鉴</button>
-          <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
+          <button id="levelsBack" class="btn btn-ghost">返回主界面</button>
+          <button id="trainBtn" class="btn btn-ghost">养成</button>
+          <button id="codexBtn" class="btn btn-ghost">图鉴</button>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div id="codex" class="overlay hidden">
-      <div class="overlay-card codex-card">
-        <h2>图鉴</h2>
-        <p class="train-tip">点击任一武将查看详细属性、技能与羁绊。</p>
-        <h3 class="codex-h">武将</h3>
-        <div id="codexHeroes" class="codex-list"></div>
-        <h3 class="codex-h">羁绊</h3>
-        <div id="codexBonds" class="codex-list"></div>
-        <button id="codexClose" class="btn">返回</button>
-      </div>
-    </div>
-
-    <div id="heroDetail" class="overlay hidden">
-      <div class="overlay-card detail-card">
-        <div id="detailBody"></div>
-        <button id="detailBack" class="btn">返回图鉴</button>
-      </div>
-    </div>
-
-    <div id="train" class="overlay hidden">
-      <div class="overlay-card codex-card">
-        <h2>武将养成</h2>
-        <p class="train-tip">通关掉落专属碎片，消耗碎片永久升级；升至 Lv.3 解锁被动。</p>
-        <div id="trainList" class="codex-list"></div>
-        <button id="trainClose" class="btn">返回</button>
-      </div>
-    </div>
-
-    <div id="deck" class="overlay hidden">
-      <div class="overlay-card deck-card">
+    <!-- ===== 场景：选将出战（R19）===== -->
+    <section id="sceneDeck" class="scene">
+      <div class="scene-card deck-card">
         <h2 id="deckTitle">选将出战</h2>
         <p id="deckIntro" class="train-tip"></p>
         <div id="deckGrid" class="deck-grid"></div>
@@ -104,7 +56,92 @@
           </div>
         </div>
       </div>
-    </div>
+    </section>
+
+    <!-- ===== 场景：战斗（R19）：HUD + 战场 + 招贤馆 ===== -->
+    <section id="sceneBattle" class="scene">
+      <header id="hud">
+        <span class="hud-title">虎牢关之战</span>
+        <span class="hud-item">军粮 <b id="gold">0</b></span>
+        <span class="hud-item">城池 <b id="hp">0</b></span>
+        <span class="hud-item">波次 <b id="wave">0</b>/<b id="waveTotal">0</b></span>
+        <button id="startBtn" class="btn">出战</button>
+        <span class="skillbar">
+          <button id="skillFire" class="skill-btn" data-skill="fire">
+            <span class="sk-name">火计</span><span class="sk-cd"></span>
+          </button>
+          <button id="skillFort" class="skill-btn" data-skill="fort">
+            <span class="sk-name">空城计</span><span class="sk-cd"></span>
+          </button>
+        </span>
+        <button id="pauseBtn" class="btn btn-sm">暂停</button>
+        <button id="speedBtn" class="btn btn-sm">1x</button>
+        <button id="muteBtn" class="btn btn-sm" title="音效开关">🔊</button>
+        <button id="menuBtn" class="btn btn-sm">菜单</button>
+        <span id="speedHint" class="hud-hint"></span>
+      </header>
+
+      <div id="stage">
+        <canvas id="game" width="960" height="600"></canvas>
+
+        <aside id="shop">
+          <h3>招贤馆 · 蜀</h3>
+          <button id="recruitBtn" class="recruit-btn">
+            <span class="rc-label">招贤</span>
+            <span class="rc-cost" id="recruitCost">军粮 30</span>
+          </button>
+          <div id="candidates" class="candidates"></div>
+
+          <div id="bondPanel" class="bond-panel">
+            <div class="bond-title">羁绊</div>
+            <div id="bondList" class="bond-list">未激活</div>
+          </div>
+
+          <div id="selInfo" class="sel-info">点击「招贤」抽取武将</div>
+        </aside>
+      </div>
+
+      <!-- 战中结算弹窗：开战提示 / 通关 / 失败重试 -->
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <h2 id="ovTitle">三国塔防</h2>
+          <p id="ovText">守住虎牢关，击退董卓大军！</p>
+          <div class="overlay-btns">
+            <button id="ovBtn" class="btn">开始</button>
+            <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 场景：图鉴（R19-3）：列表 + 详情子视图 ===== -->
+    <section id="sceneCodex" class="scene">
+      <div class="scene-card codex-card">
+        <div id="codexListView">
+          <h2>图鉴</h2>
+          <p class="train-tip">点击任一武将查看详细属性、技能与羁绊。</p>
+          <h3 class="codex-h">武将</h3>
+          <div id="codexHeroes" class="codex-list"></div>
+          <h3 class="codex-h">羁绊</h3>
+          <div id="codexBonds" class="codex-list"></div>
+          <button id="codexClose" class="btn">返回</button>
+        </div>
+        <div id="codexDetailView" class="hidden">
+          <div id="detailBody"></div>
+          <button id="detailBack" class="btn">返回图鉴</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 场景：武将养成（R19-3）===== -->
+    <section id="sceneBarracks" class="scene">
+      <div class="scene-card codex-card">
+        <h2>武将养成</h2>
+        <p class="train-tip">通关掉落专属碎片，消耗碎片永久升级；升至 Lv.3 解锁被动。</p>
+        <div id="trainList" class="codex-list"></div>
+        <button id="trainClose" class="btn">返回</button>
+      </div>
+    </section>
   </div>
 
   <script src="data.js"></script>

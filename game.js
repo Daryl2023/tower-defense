@@ -6,6 +6,9 @@ const COLS = 16;
 const ROWS = 10;
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+// R19 主界面背景画布
+const homeCanvas = document.getElementById("homeCanvas");
+const homeCtx = homeCanvas ? homeCanvas.getContext("2d") : null;
 
 // 关卡当前状态（由 loadLevel 填充）
 let path = [];
@@ -72,6 +75,8 @@ const game = {
   refreshCost: 30,
   candidates: [],
   pendingCost: 0,
+  scene: "home",   // R19：场景状态机 home / levels / deck / battle / barracks / codex
+  sceneReturn: "home", // R19：离开 barracks/codex 时返回的场景
 };
 
 // ===== 存档（R7-2 / R9-1 扩展 shards/ranks）=====
@@ -206,33 +211,34 @@ const el = {
   recruitCost: document.getElementById("recruitCost"),
   candidates: document.getElementById("candidates"),
   codexBtn: document.getElementById("codexBtn"),
-  codex: document.getElementById("codex"),
   codexHeroes: document.getElementById("codexHeroes"),
   codexBonds: document.getElementById("codexBonds"),
   codexClose: document.getElementById("codexClose"),
   trainBtn: document.getElementById("trainBtn"),
-  train: document.getElementById("train"),
   trainList: document.getElementById("trainList"),
   trainClose: document.getElementById("trainClose"),
-  deck: document.getElementById("deck"),
   deckTitle: document.getElementById("deckTitle"),
   deckIntro: document.getElementById("deckIntro"),
   deckGrid: document.getElementById("deckGrid"),
   deckCount: document.getElementById("deckCount"),
   deckStart: document.getElementById("deckStart"),
   deckBack: document.getElementById("deckBack"),
-  heroDetail: document.getElementById("heroDetail"),
   detailBody: document.getElementById("detailBody"),
   detailBack: document.getElementById("detailBack"),
 };
 el.recruitBtn.addEventListener("click", drawRecruit);
 el.codexBtn.addEventListener("click", openCodex);
-el.codexClose.addEventListener("click", () => el.codex.classList.add("hidden"));
+el.codexClose.addEventListener("click", () => leaveSubScene());
 el.trainBtn.addEventListener("click", openTrain);
-el.trainClose.addEventListener("click", () => el.train.classList.add("hidden"));
+el.trainClose.addEventListener("click", () => leaveSubScene());
 el.deckStart.addEventListener("click", confirmDeck);
-el.deckBack.addEventListener("click", () => { el.deck.classList.add("hidden"); showMenu(); });
-el.detailBack.addEventListener("click", () => { el.heroDetail.classList.add("hidden"); el.codex.classList.remove("hidden"); });
+el.deckBack.addEventListener("click", () => showMenu());
+// R19 主界面 / 关卡选择导航
+document.getElementById("homeStart").addEventListener("click", () => showMenu());
+document.getElementById("homeTrain").addEventListener("click", openTrain);
+document.getElementById("homeCodex").addEventListener("click", openCodex);
+document.getElementById("levelsBack").addEventListener("click", () => showHome());
+el.detailBack.addEventListener("click", () => showCodexList());
 
 // ===== 音效（R12）=====
 function updateMuteUI() { if (el.muteBtn) el.muteBtn.textContent = Sfx.isMuted() ? "🔇" : "🔊"; }
@@ -248,7 +254,24 @@ function heroPortraitImg(id, cls) {
   const src = Art.getHeroPortrait(id);
   return src ? `<img class="${cls}" src="${src}" alt="">` : "";
 }
+// R19-3：图鉴/养成场景化 —— 子视图切换 + 统一返回
+function showCodexList() {
+  document.getElementById("codexListView").classList.remove("hidden");
+  document.getElementById("codexDetailView").classList.add("hidden");
+}
+function showCodexDetail() {
+  document.getElementById("codexListView").classList.add("hidden");
+  document.getElementById("codexDetailView").classList.remove("hidden");
+}
+// 离开图鉴/养成场景：返回来源场景（home 则刷新概览条）
+function leaveSubScene() {
+  const ret = game.sceneReturn || "home";
+  if (ret === "home") renderHomeOverview();
+  else if (ret === "levels") renderMenuList();
+  switchScene(ret);
+}
 function openCodex() {
+  game.sceneReturn = game.scene;
   el.codexHeroes.innerHTML = Object.keys(HEROES).map((id) => {
     const h = HEROES[id];
     const locked = !isUnlocked(id);
@@ -271,7 +294,8 @@ function openCodex() {
       `<span class="cx-desc">${b.desc}</span></div>` +
       `<div style="font-size:11px;color:#8a7a62;padding:0 12px 2px">需：${names}</div>`;
   }).join("");
-  el.codex.classList.remove("hidden");
+  showCodexList();
+  switchScene("codex");
 }
 
 // ===== 图鉴武将详细页（R15）=====
@@ -319,8 +343,7 @@ function openHeroDetail(id) {
     `<div class="dt-tip">※ 属性为 Lv.1 战斗形态（含当前永久升级），实战另受羁绊/光环加成</div>` +
     `<div class="dt-section">被动技能</div>` + pasHtml +
     `<div class="dt-section">参与羁绊</div>` + bondHtml;
-  el.codex.classList.add("hidden");
-  el.heroDetail.classList.remove("hidden");
+  showCodexDetail();
 }
 
 // ===== 养成界面（R9-5）：碎片升级 + 被动解锁 =====
@@ -372,8 +395,9 @@ function renderTrainList() {
   });
 }
 function openTrain() {
+  game.sceneReturn = game.scene;
   renderTrainList();
-  el.train.classList.remove("hidden");
+  switchScene("barracks");
 }
 
 // ===== 工具 =====
@@ -619,35 +643,73 @@ el.startBtn.addEventListener("click", () => {
 
 el.ovBtn.addEventListener("click", () => {
   const mode = game.overlayMode;
-  if (mode === "menu") return; // 菜单模式下由关卡按钮处理
   el.overlay.classList.add("hidden");
   if (mode === "levelClear") startLevel(game.levelIndex + 1);
-  else if (mode === "win") { showMenu(); return; }
+  else if (mode === "win") { showHome(); return; }
   else if (mode === "retry") startLevel(game.levelIndex);
   // intro / levelClear / retry → 开始战斗
   game.overlayMode = null;
   game.running = true;
 });
 
-el.ovBtn2.addEventListener("click", () => showMenu());
-el.menuBtn.addEventListener("click", () => showMenu());
+el.ovBtn2.addEventListener("click", () => showHome());
+el.menuBtn.addEventListener("click", () => showHome());
 
-// ===== 主菜单 / 关卡选择（R7-1）=====
+// ===== 场景状态机（R19）=====
+// 每个场景是一个全屏 <section class="scene">，互斥显隐。switchScene 仅管 DOM 显隐 + 记录状态。
+const SCENE_IDS = { home: "sceneHome", levels: "sceneLevels", deck: "sceneDeck", battle: "sceneBattle", barracks: "sceneBarracks", codex: "sceneCodex" };
+function switchScene(name) {
+  game.scene = name;
+  for (const key of Object.keys(SCENE_IDS)) {
+    const node = document.getElementById(SCENE_IDS[key]);
+    if (node) node.classList.toggle("active", key === name);
+  }
+}
+
+// ===== 主菜单 / 关卡选择（R7-1 → R19 场景化）=====
+// 进入关卡选择场景：复位战斗态、停乐、渲染分章列表。
 function showMenu() {
   game.running = false;
   game.over = false;
   game.paused = false;
   Sfx.stopMusic();
-  game.overlayMode = "menu";
-  el.ovTitle.textContent = "三国塔防";
-  el.ovText.textContent = "选择战场，运筹帷幄。";
-  el.menuList.classList.remove("hidden");
-  el.ovBtn.classList.add("hidden");
-  el.ovBtn2.classList.add("hidden");
-  el.codexBtn.classList.remove("hidden");
-  el.trainBtn.classList.remove("hidden");
+  game.overlayMode = null;
+  el.overlay.classList.add("hidden"); // 收起战中结算弹窗
   renderMenuList();
-  el.overlay.classList.remove("hidden");
+  switchScene("levels");
+  updatePauseUI();
+}
+
+// ===== 主界面 home（R19）=====
+function chapterOfLevel(i) {
+  if (CHAPTERS) for (const ch of CHAPTERS) if (i >= ch.from && i <= ch.to) return ch;
+  return null;
+}
+function renderHomeOverview() {
+  const node = document.getElementById("homeOverview");
+  if (!node) return;
+  const cur = Math.min(Math.max(0, game.maxUnlocked), LEVELS.length - 1);
+  const ch = chapterOfLevel(cur);
+  const lvName = LEVELS[cur] ? LEVELS[cur].name : "";
+  const cleared = game.maxUnlocked >= LEVELS.length - 1;
+  const unlockedCount = unlockedIds().length;
+  const totalHeroes = Object.keys(HEROES).length;
+  node.innerHTML =
+    `<div class="ov-chip"><span class="ov-k">战役进度</span><span class="ov-v">${ch ? ch.name : "—"}　第 ${cur + 1}/${LEVELS.length} 关</span></div>` +
+    `<div class="ov-chip"><span class="ov-k">武将解锁</span><span class="ov-v">${unlockedCount}/${totalHeroes}</span></div>` +
+    `<button id="homeContinue" class="btn ov-continue">${cleared ? "重战" : "继续"}：${lvName} →</button>`;
+  const cont = document.getElementById("homeContinue");
+  if (cont) cont.addEventListener("click", () => enterLevel(cur));
+}
+function showHome() {
+  game.running = false;
+  game.over = false;
+  game.paused = false;
+  Sfx.stopMusic();
+  game.overlayMode = null;
+  el.overlay.classList.add("hidden");
+  renderHomeOverview();
+  switchScene("home");
   updatePauseUI();
 }
 function appendLevelBtn(i) {
@@ -692,12 +754,11 @@ function showDeckSelect(i) {
   game.pendingLevel = i;
   deckDraft = normalizeDeck(meta.deck);
   const lv = LEVELS[i];
-  el.overlay.classList.add("hidden");
   el.deckTitle.textContent = (i + 1) + ". " + lv.name + " · 选将出战";
   const fid = lv.featured;
   el.deckIntro.textContent = lv.intro + (fid && HEROES[fid] ? `（本关「${HEROES[fid].name}」碎片掉落提升）` : "");
   renderDeckGrid();
-  el.deck.classList.remove("hidden");
+  switchScene("deck");
 }
 function renderDeckGrid() {
   el.deckGrid.innerHTML = unlockedIds().map((id) => {
@@ -733,7 +794,7 @@ function confirmDeck() {
   if (deckDraft.length < 1 || deckDraft.length > DECK_SIZE) return;
   meta.deck = deckDraft.slice();
   saveProgress();
-  el.deck.classList.add("hidden");
+  switchScene("battle");
   game.overlayMode = null;
   game.running = true;
   Sfx.init(); Sfx.startMusic();
@@ -1472,8 +1533,6 @@ function win() {
   const shardLine = dn.length
     ? "　战利碎片：" + dn.map((id) => `${HEROES[id].name}×${drops[id]}`).join("、")
     : "";
-  el.menuList.classList.add("hidden");
-  el.codexBtn.classList.add("hidden");
   el.ovBtn.classList.remove("hidden");
   el.ovBtn2.classList.remove("hidden");
   if (game.levelIndex >= LEVELS.length - 1) {
@@ -1495,8 +1554,6 @@ function lose() {
   game.over = true; game.running = false; game.paused = false;
   Sfx.stopMusic(); Sfx.play("lose");
   game.overlayMode = "retry";
-  el.menuList.classList.add("hidden");
-  el.codexBtn.classList.add("hidden");
   el.ovTitle.textContent = "关隘失守";
   el.ovText.textContent = "城池被攻破……整军再来，未为晚也。";
   el.ovBtn.textContent = "重整旗鼓";
@@ -1532,7 +1589,8 @@ function loop(now) {
   if (!game.paused) {
     for (let i = 0; i < game.speed; i++) update(dt); // 加速 = 每帧多跑几步
   }
-  draw();
+  if (game.scene === "battle") draw(); // R19：仅战斗场景绘制战场 canvas
+  else if (game.scene === "home" && homeCtx) Art.drawHomeScene(homeCtx, homeCanvas.width, homeCanvas.height, now / 1000);
   requestAnimationFrame(loop);
 }
 
@@ -1544,8 +1602,7 @@ meta.shards = _save.shards;
 meta.ranks = _save.ranks;
 meta.deck = _save.deck;
 meta.unlocked = _save.unlocked;
-startLevel(0);
-showMenu();
+startLevel(0);   // 预载关卡（path/waves 就绪，供战斗场景绘制）
+showHome();      // R19：落地到主界面
 updateMuteUI();
-el.overlay.classList.remove("hidden");
 requestAnimationFrame(loop);

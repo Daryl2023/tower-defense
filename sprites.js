@@ -51,8 +51,8 @@ const IMAGE_OVERRIDES = {
   },
   "hero:zhaoyun": {
     img: "assets/heroes/zhaoyun/sheet.png",
-    cols: 4, rows: 2, frameW: 344, frameH: 384,
-    frameInset: 0.1, // 裁切每格内缩，避免邻帧武器/棋盘格边角渗入
+    cols: 4, rows: 2, frameW: 364, frameH: 360, // 整表 1456×720
+    frameInset: 0.1,
     portrait: "assets/heroes/zhaoyun/portrait.png",
     icons: "assets/heroes/zhaoyun/icons.png",
   },
@@ -71,14 +71,47 @@ function loadImage(src, onOk, onErr) {
   im.src = src;
 }
 
+// AI 生图常见假透明：棋盘格暗格~96、亮格~144 被画进像素；银甲/白袍通常 >=161
+// 去除低饱和中性灰格（保留有色彩的盔甲/皮肤/特效）
+function stripAICheckerboard(img, opts = {}) {
+  const darkMax = opts.darkMax ?? 158;
+  const whiteMin = opts.whiteMin ?? (opts.portrait ? 250 : 238);
+  const c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    if (d[i + 3] === 0) continue;
+    if (Math.abs(r - g) > 18 || Math.abs(g - b) > 18) continue;
+    if ((r >= 85 && r <= darkMax) || r >= whiteMin) d[i + 3] = 0;
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+function finalizeSpriteImage(im, asset) {
+  if (asset.stripBg === false) return im;
+  return stripAICheckerboard(im, { portrait: !asset.cols });
+}
+
 function preloadSprites() {
   for (const id in SPRITE_ASSETS) {
     const a = SPRITE_ASSETS[id];
     if (a.img) {
-      loadImage(a.img, (im) => { a._image = im; a._ready = true; }, () => { a._ready = false; });
+      loadImage(a.img, (im) => {
+        a._image = finalizeSpriteImage(im, a);
+        a._ready = true;
+      }, () => { a._ready = false; });
     }
     if (a.portrait) {
-      loadImage(a.portrait, (im) => { a._portrait = im; a._portraitReady = true; });
+      loadImage(a.portrait, (im) => {
+        a._portrait = finalizeSpriteImage(im, a);
+        a._portraitReady = true;
+      });
     }
   }
 }
@@ -839,7 +872,181 @@ function drawParticles(ctx) {
 function clearParticles() { particles.length = 0; }
 
 // ---------- 导出到全局 ----------
+// ============================================================
+// 主界面程序化背景（R19）：三国关隘暮色图
+// 远山层叠 + 雾气 + 关隘城楼剪影 + 军旗 + 火把，轻动画（旗摆/火把闪/雾飘）。
+// 静态层（天空/山/城楼）离屏缓存，仅动态层逐帧重绘。
+// ============================================================
+const _homeCache = { w: 0, h: 0, canvas: null };
+
+function _buildHomeStatic(w, h) {
+  const off = document.createElement("canvas");
+  off.width = w; off.height = h;
+  const c = off.getContext("2d");
+  // 天空：暮色渐变
+  const sky = c.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, "#2a1d2e");
+  sky.addColorStop(0.45, "#5a2f2a");
+  sky.addColorStop(0.7, "#8a4a2a");
+  sky.addColorStop(1, "#c87a3a");
+  c.fillStyle = sky; c.fillRect(0, 0, w, h);
+  // 落日
+  const sunY = h * 0.66, sunX = w * 0.5;
+  const sun = c.createRadialGradient(sunX, sunY, 8, sunX, sunY, h * 0.5);
+  sun.addColorStop(0, "rgba(255,210,130,0.95)");
+  sun.addColorStop(0.18, "rgba(255,170,90,0.55)");
+  sun.addColorStop(1, "rgba(255,150,80,0)");
+  c.fillStyle = sun; c.fillRect(0, 0, w, h);
+  c.fillStyle = "rgba(255,225,160,0.9)";
+  c.beginPath(); c.arc(sunX, sunY, h * 0.075, 0, Math.PI * 2); c.fill();
+  // 远山三层（越远越淡）
+  const ranges = [
+    { base: h * 0.62, amp: h * 0.10, col: "#6a3b34", step: 0.9 },
+    { base: h * 0.70, amp: h * 0.13, col: "#4e2a28", step: 1.3 },
+    { base: h * 0.80, amp: h * 0.10, col: "#341d1c", step: 1.7 },
+  ];
+  for (const rg of ranges) {
+    c.fillStyle = rg.col;
+    c.beginPath(); c.moveTo(0, h);
+    c.lineTo(0, rg.base);
+    let phase = rg.base;
+    for (let x = 0; x <= w; x += 8) {
+      const y = rg.base
+        + Math.sin(x * 0.006 * rg.step) * rg.amp
+        + Math.sin(x * 0.017 * rg.step + 1.3) * rg.amp * 0.4;
+      c.lineTo(x, y);
+    }
+    c.lineTo(w, h); c.closePath(); c.fill();
+  }
+  // 关隘城楼剪影（居中偏下，虎牢关意象）
+  _drawGateTower(c, w * 0.5, h * 0.86, w * 0.46, h * 0.40);
+  return off;
+}
+
+// 城楼剪影：城墙 + 雉堞 + 谯楼 + 拱门
+function _drawGateTower(c, cx, baseY, ww, hh) {
+  const wallTop = baseY - hh * 0.5;
+  const x0 = cx - ww / 2, x1 = cx + ww / 2;
+  c.fillStyle = "#241413";
+  // 城墙主体
+  c.fillRect(x0, wallTop, ww, baseY - wallTop);
+  // 雉堞（垛口）
+  const merlonW = ww / 18;
+  c.fillStyle = "#1c0f0e";
+  for (let i = 0; i < 18; i += 2) {
+    c.fillRect(x0 + i * merlonW, wallTop - hh * 0.05, merlonW, hh * 0.05);
+  }
+  // 谯楼（城楼主体，居中）
+  const tw = ww * 0.30, th = hh * 0.42;
+  const tx = cx - tw / 2, ty = wallTop - th;
+  c.fillStyle = "#2a1715";
+  c.fillRect(tx, ty, tw, th);
+  // 飞檐屋顶（梯形）
+  c.fillStyle = "#3a201c";
+  c.beginPath();
+  c.moveTo(tx - tw * 0.18, ty);
+  c.lineTo(tx + tw * 0.5, ty - th * 0.45);
+  c.lineTo(tx + tw * 1.18, ty);
+  c.closePath(); c.fill();
+  // 屋脊兽头微翘
+  c.fillRect(tx - tw * 0.18, ty - 2, 4, 6);
+  c.fillRect(tx + tw * 1.14, ty - 2, 4, 6);
+  // 拱门
+  const gw = ww * 0.12, gh = hh * 0.34, gx = cx - gw / 2, gy = baseY - gh;
+  c.fillStyle = "#0c0605";
+  c.beginPath();
+  c.moveTo(gx, baseY);
+  c.lineTo(gx, gy + gw * 0.5);
+  c.arc(cx, gy + gw * 0.5, gw / 2, Math.PI, 0);
+  c.lineTo(gx + gw, baseY);
+  c.closePath(); c.fill();
+  // 城楼窗口微光
+  c.fillStyle = "rgba(255,180,90,0.5)";
+  c.fillRect(cx - tw * 0.22, ty + th * 0.35, tw * 0.16, th * 0.3);
+  c.fillRect(cx + tw * 0.06, ty + th * 0.35, tw * 0.16, th * 0.3);
+}
+
+// 飘扬军旗（动态）：旗杆 + 摆动旗面 + 帥字
+function _drawBanner(c, x, baseY, hgt, t, flip) {
+  const poleW = Math.max(3, hgt * 0.02);
+  c.fillStyle = "#1a0e0a";
+  c.fillRect(x - poleW / 2, baseY - hgt, poleW, hgt);
+  c.fillStyle = "#c8a04a"; // 杆顶矛尖
+  c.beginPath(); c.moveTo(x, baseY - hgt - hgt * 0.06); c.lineTo(x - poleW, baseY - hgt); c.lineTo(x + poleW, baseY - hgt); c.closePath(); c.fill();
+  // 旗面：自顶向下的多段，随时间横向波动
+  const fw = hgt * 0.5 * (flip ? -1 : 1), fh = hgt * 0.42, top = baseY - hgt + hgt * 0.04;
+  c.fillStyle = "#9a2b22";
+  c.beginPath();
+  c.moveTo(x, top);
+  const seg = 10;
+  for (let i = 0; i <= seg; i++) {
+    const ty = top + (fh) * (i / seg);
+    const wave = Math.sin(t * 3 + i * 0.6) * (hgt * 0.04) * (i / seg);
+    c.lineTo(x + fw * (i / seg) + wave, ty);
+  }
+  for (let i = seg; i >= 0; i--) {
+    const ty = top + fh * 0.62 * (i / seg) + fh * 0.2;
+    const wave = Math.sin(t * 3 + i * 0.6) * (hgt * 0.04) * (i / seg);
+    c.lineTo(x + fw * (i / seg) + wave, ty);
+  }
+  c.closePath(); c.fill();
+  // 帥字
+  c.fillStyle = "#f0e0b0";
+  c.font = "bold " + Math.round(hgt * 0.13) + "px serif";
+  c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillText("帥", x + fw * 0.5, top + fh * 0.38);
+  c.textBaseline = "alphabetic";
+}
+
+// 火把（动态）：摇曳火焰 + 光晕
+function _drawTorch(c, x, baseY, t, seed) {
+  c.fillStyle = "#1a0e0a"; c.fillRect(x - 2, baseY - 26, 4, 26);
+  const flick = 0.7 + Math.sin(t * 9 + seed) * 0.18 + Math.sin(t * 17 + seed) * 0.12;
+  const fy = baseY - 30, fr = 10 * flick;
+  const glow = c.createRadialGradient(x, fy, 1, x, fy, fr * 4);
+  glow.addColorStop(0, "rgba(255,190,90,0.5)");
+  glow.addColorStop(1, "rgba(255,150,60,0)");
+  c.fillStyle = glow; c.beginPath(); c.arc(x, fy, fr * 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ff8a2a";
+  c.beginPath(); c.ellipse(x, fy, fr * 0.6, fr, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ffd24a";
+  c.beginPath(); c.ellipse(x, fy + 2, fr * 0.32, fr * 0.6, 0, 0, Math.PI * 2); c.fill();
+}
+
+function drawHomeScene(ctx, w, h, time) {
+  if (!_homeCache.canvas || _homeCache.w !== w || _homeCache.h !== h) {
+    _homeCache.canvas = _buildHomeStatic(w, h);
+    _homeCache.w = w; _homeCache.h = h;
+  }
+  ctx.drawImage(_homeCache.canvas, 0, 0);
+  // 雾气带（横向飘移）
+  const drift = (time * 14) % (w + 200);
+  for (let k = 0; k < 2; k++) {
+    const my = h * (0.6 + k * 0.12);
+    const mg = ctx.createLinearGradient(0, my - 30, 0, my + 30);
+    mg.addColorStop(0, "rgba(220,200,180,0)");
+    mg.addColorStop(0.5, "rgba(220,200,180," + (0.10 - k * 0.03) + ")");
+    mg.addColorStop(1, "rgba(220,200,180,0)");
+    ctx.fillStyle = mg;
+    ctx.save();
+    ctx.translate(-100 + (k % 2 ? drift : -drift) * 0.3, 0);
+    ctx.fillRect(0, my - 30, w + 200, 60);
+    ctx.restore();
+  }
+  // 军旗（左右）+ 火把
+  _drawBanner(ctx, w * 0.16, h * 0.92, h * 0.42, time, false);
+  _drawBanner(ctx, w * 0.84, h * 0.92, h * 0.42, time, true);
+  _drawTorch(ctx, w * 0.30, h * 0.92, time, 1.7);
+  _drawTorch(ctx, w * 0.70, h * 0.92, time, 4.2);
+  // 底部压暗，承托 UI
+  const vg = ctx.createLinearGradient(0, h * 0.55, 0, h);
+  vg.addColorStop(0, "rgba(10,6,4,0)");
+  vg.addColorStop(1, "rgba(10,6,4,0.66)");
+  ctx.fillStyle = vg; ctx.fillRect(0, h * 0.55, w, h * 0.45);
+}
+
 window.Art = {
   SPRITE_ASSETS, IMAGE_OVERRIDES, preloadSprites, drawSprite, getHeroPortrait,
   emitParticles, updateParticles, drawParticles, clearParticles,
+  drawHomeScene,
 };

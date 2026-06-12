@@ -90,6 +90,49 @@ body {
 
 .overlay-btns { display: flex; gap: 10px; justify-content: center; }
 
+/* ===== 场景状态机（R19）：全屏互斥场景 ===== */
+.scene { display: none; }
+#sceneBattle.active { display: block; }
+#sceneLevels.active, #sceneDeck.active, #sceneBarracks.active, #sceneCodex.active { display: flex; justify-content: center; align-items: flex-start; padding: 24px 0 40px; }
+.scene-card {
+  width: 100%;
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 24px 32px;
+  text-align: center;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.levels-wrap { max-width: 560px; }
+.scene-title { color: var(--accent); font-size: 32px; font-weight: 700; letter-spacing: 4px; margin-bottom: 6px; }
+.scene-sub { color: #d8cdb8; font-size: 14px; margin-bottom: 18px; }
+
+/* ===== 主界面 home（R19）===== */
+#sceneHome { position: relative; }
+#sceneHome.active { display: block; }
+.home-bg { width: 100%; height: auto; display: block; border-radius: 12px; border: 2px solid var(--accent-dark); }
+.home-ui { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 6% 6% 5%; pointer-events: none; }
+.home-ui button { pointer-events: auto; }
+.home-top { text-align: center; }
+.home-title {
+  font-size: 64px; font-weight: 800; letter-spacing: 16px; color: #ffe6a8;
+  text-shadow: 0 3px 14px rgba(0,0,0,0.85), 0 0 36px rgba(255,180,90,0.45);
+}
+.home-tagline { margin-top: 10px; font-size: 16px; letter-spacing: 4px; color: #f0dcc0; text-shadow: 0 1px 8px rgba(0,0,0,0.9); }
+.home-bottom { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.home-overview { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; align-items: stretch; }
+.ov-chip {
+  background: rgba(18,11,7,0.66); border: 1px solid var(--accent-dark); border-radius: 8px;
+  padding: 8px 16px; display: flex; flex-direction: column; gap: 3px; justify-content: center;
+}
+.ov-k { font-size: 11px; color: #c0b090; letter-spacing: 2px; }
+.ov-v { font-size: 15px; color: #f0e6d2; font-weight: 700; }
+.ov-continue { background: #6fae4a; color: #10240a; align-self: center; }
+.ov-continue:hover { background: #82c95c; }
+.home-actions { display: flex; gap: 12px; align-items: center; }
+.home-btn-main { font-size: 18px; padding: 12px 34px; letter-spacing: 2px; }
+
 .menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 56vh; overflow-y: auto; padding-right: 6px; }
 .menu-list.hidden { display: none; }
 .chapter-head {
