@@ -463,6 +463,18 @@ const CHAPTERS = [
   { name: "第五章 · 鞠躬尽瘁", from: 13, to: 15 },  // 陈仓→五丈原→剑阁(邓艾)
 ];
 
-window.GameData = { RARITY, ARCHETYPES, HEROES, STARTERS, BONDS, SKILLS, ENEMY_TYPES, BOSSES, TUNING, LEVELS, CHAPTERS };
+// 通关三选一增益（R22）：连续征战累加。effect 合并进 runBuffs 累加器。
+const BOONS = [
+  { id: "dmg",    name: "锋锐",     desc: "全军伤害 +12%",       effect: { dmgMul: 0.12 } },
+  { id: "rate",   name: "疾战",     desc: "全军攻速 +12%",       effect: { rateMul: 0.12 } },
+  { id: "range",  name: "远略",     desc: "全军射程 +12%",       effect: { rangeMul: 0.12 } },
+  { id: "gold",   name: "屯粮",     desc: "进关起始军粮 +70",     effect: { goldStart: 70 } },
+  { id: "greed",  name: "取敌之资", desc: "击杀军粮 +20%",       effect: { killGoldMul: 0.20 } },
+  { id: "wall",   name: "固城",     desc: "城池上限 +6",         effect: { hpBonus: 6 } },
+  { id: "thrift", name: "简募",     desc: "招贤刷新费起步 -6",    effect: { refreshCut: 6 } },
+  { id: "crit",   name: "锐卒",     desc: "全军额外暴击 +8%（×1.8）", effect: { critChance: 0.08 } },
+];
+
+window.GameData = { RARITY, ARCHETYPES, HEROES, STARTERS, BONDS, SKILLS, ENEMY_TYPES, BOSSES, TUNING, LEVELS, CHAPTERS, BOONS };
 
 })();

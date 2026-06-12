@@ -27,6 +27,21 @@ const BOSSES = GameData.BOSSES;
 const STARTERS = GameData.STARTERS;
 const LEVELS = GameData.LEVELS;
 const CHAPTERS = GameData.CHAPTERS;
+const BOONS = GameData.BOONS || [];
+// R22：连续征战增益累加器
+function freshRunBuffs() { return { dmgMul: 1, rateMul: 1, rangeMul: 1, goldStart: 0, killGoldMul: 0, hpBonus: 0, refreshCut: 0, critChance: 0, count: 0 }; }
+function applyBoon(effect) {
+  const b = game.runBuffs;
+  if (effect.dmgMul) b.dmgMul += effect.dmgMul;
+  if (effect.rateMul) b.rateMul += effect.rateMul;
+  if (effect.rangeMul) b.rangeMul += effect.rangeMul;
+  if (effect.goldStart) b.goldStart += effect.goldStart;
+  if (effect.killGoldMul) b.killGoldMul += effect.killGoldMul;
+  if (effect.hpBonus) b.hpBonus += effect.hpBonus;
+  if (effect.refreshCut) b.refreshCut += effect.refreshCut;
+  if (effect.critChance) b.critChance += effect.critChance;
+  b.count += 1;
+}
 // 关卡末波是否含 Boss → 返回 boss id（无则 null）
 function levelBossId(i) {
   const lv = LEVELS[i];
@@ -75,6 +90,8 @@ const game = {
   refreshCost: 30,
   candidates: [],
   pendingCost: 0,
+  cutscene: null,  // R21：结算过场动画状态
+  runBuffs: null,  // R22：连续征战增益累加器（freshRunBuffs）
   scene: "home",   // R19：场景状态机 home / levels / deck / battle / barracks / codex
   sceneReturn: "home", // R19：离开 barracks/codex 时返回的场景
 };
@@ -438,11 +455,14 @@ function towerStats(tw) {
       rawBase = rawBase * (1 + g);
     }
   }
+  // R22 连续征战增益（仅战斗内有 runBuffs；codex 预览时为 null → 取 1）
+  const rb = game.runBuffs || null;
+  const buffDmg = rb ? rb.dmgMul : 1, buffRange = rb ? rb.rangeMul : 1, buffRate = rb ? rb.rateMul : 1;
   return {
-    range: Math.round((a.range * rangeMul * rankRange * (tw.auraRange || 1)) + (tw.level - 1) * 12),
-    damage: Math.round(rawBase * (tw.bondMult || 1) * (tw.auraMult || 1)),
+    range: Math.round((a.range * rangeMul * rankRange * (tw.auraRange || 1) * buffRange) + (tw.level - 1) * 12),
+    damage: Math.round(rawBase * (tw.bondMult || 1) * (tw.auraMult || 1) * buffDmg),
     baseDamage: Math.round(rawBase),
-    fireRate: a.fireRate * rateMul / (tw.rateBondMult || 1) / (tw.auraRate || 1),
+    fireRate: a.fireRate * rateMul / (tw.rateBondMult || 1) / (tw.auraRate || 1) / buffRate,
     splash,
     projColor: a.projColor,
     projSpeed: a.projSpeed,
@@ -460,6 +480,8 @@ canvas.addEventListener("mousemove", (e) => {
 canvas.addEventListener("mouseleave", () => { game.mouse.cell = null; });
 
 canvas.addEventListener("click", () => {
+  // R21：过场动画进行中，点击跳过直接出结算卡
+  if (game.cutscene && !game.cutscene.done) { finishCutscene(); return; }
   if (!game.mouse.cell) return;
   // 施放定点计谋（火计）
   if (game.targeting) { castTargetedSkill(game.targeting, game.mouse.x, game.mouse.y); return; }
@@ -1165,6 +1187,10 @@ function resolveHit(tw, target, ix, iy, baseDamage, splash, range) {
   if (p && p.type === "onHit" && p.params.critChance && Math.random() < p.params.critChance) {
     dmg = Math.round(dmg * p.params.critMul); crit = true;
   }
+  // R22·锐卒增益：全军额外暴击（与被动暴击不叠乘，取已暴免重复）
+  if (!crit && game.runBuffs && game.runBuffs.critChance > 0 && Math.random() < game.runBuffs.critChance) {
+    dmg = Math.round(dmg * 1.8); crit = true;
+  }
   // 主伤害（溅射 or 单体），带攻击归属
   if (splash > 0) areaDamageBy(ix, iy, splash, dmg, tw, null);
   else if (target && target.hp > 0) damageBy(target, dmg, tw);
@@ -1220,9 +1246,11 @@ function damageBy(en, amount, tw) {
   if (wasAlive && en.hp <= 0) onEnemyKilled(en, tw);
 }
 function onEnemyKilled(en, tw) {
-  game.gold += en.reward;
+  // R22·取敌之资增益：击杀军粮加成
+  const reward = game.runBuffs && game.runBuffs.killGoldMul ? Math.round(en.reward * (1 + game.runBuffs.killGoldMul)) : en.reward;
+  game.gold += reward;
   Sfx.play("kill");
-  game.floaters.push({ x: en.x, y: en.y, text: "+" + en.reward, life: 0.8, color: "#c8a04a" });
+  game.floaters.push({ x: en.x, y: en.y, text: "+" + reward, life: 0.8, color: "#c8a04a" });
   // 死亡消散粒子
   Art.emitParticles(en.x, en.y, { count: 12, color: en.color, speed: 80, life: 0.5, size: 3, gravity: 30 });
   // 名将 Boss 授首（R16）：盛大特效 + 记录 featured 碎片奖励（结算并入掉落）
@@ -1279,6 +1307,11 @@ function draw() {
     ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#f0e6d2"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("‖ 暂停", canvas.width / 2, canvas.height / 2);
+  }
+  // R21：结算过场动画叠加层
+  if (game.cutscene && !game.cutscene.done) {
+    const p = game.cutscene.t / game.cutscene.dur;
+    Art.drawCutscene(ctx, canvas.width, canvas.height, game.cutscene.type, p);
   }
 }
 
@@ -1519,6 +1552,28 @@ function flash(text) {
 }
 
 // ===== 胜负 =====
+// R21：过场动画 → 揭示结算卡。win/lose 先算结果存 payload，播放过场，结束后 applyResultOverlay。
+function startCutscene(type, payload) {
+  game.cutscene = { type, t: 0, dur: type === "win" ? 1.7 : 1.5, payload, done: false };
+}
+function finishCutscene() {
+  const cs = game.cutscene;
+  if (!cs || cs.done) return;
+  cs.done = true;
+  applyResultOverlay(cs.payload);
+  game.cutscene = null;
+}
+function applyResultOverlay(pl) {
+  game.overlayMode = pl.mode;
+  el.ovTitle.textContent = pl.title;
+  el.ovText.textContent = pl.text;
+  el.ovBtn.textContent = pl.btn;
+  el.ovBtn.classList.remove("hidden");
+  if (pl.showBtn2) el.ovBtn2.classList.remove("hidden"); else el.ovBtn2.classList.add("hidden");
+  el.overlay.classList.remove("hidden");
+  el.overlay.classList.remove("cut-reveal"); void el.overlay.offsetWidth; el.overlay.classList.add("cut-reveal");
+  updatePauseUI();
+}
 function win() {
   game.over = true; game.running = false; game.paused = false;
   Sfx.stopMusic(); Sfx.play("win");
@@ -1533,47 +1588,38 @@ function win() {
   const shardLine = dn.length
     ? "　战利碎片：" + dn.map((id) => `${HEROES[id].name}×${drops[id]}`).join("、")
     : "";
-  el.ovBtn.classList.remove("hidden");
-  el.ovBtn2.classList.remove("hidden");
+  let payload;
   if (game.levelIndex >= LEVELS.length - 1) {
-    game.overlayMode = "win";
-    el.ovTitle.textContent = "天下大势已定！";
-    el.ovText.textContent = "三战皆捷，威震华夏。" + shardLine;
-    el.ovBtn.textContent = "返回主菜单";
-    el.ovBtn2.classList.add("hidden");
+    payload = { mode: "win", title: "天下大势已定！", text: "三战皆捷，威震华夏。" + shardLine, btn: "返回主菜单", showBtn2: false };
   } else {
-    game.overlayMode = "levelClear";
-    el.ovTitle.textContent = "大捷！";
-    el.ovText.textContent = LEVELS[game.levelIndex].name + " 已下。下一战：" + LEVELS[game.levelIndex + 1].name + shardLine;
-    el.ovBtn.textContent = "进军下一关";
+    payload = { mode: "levelClear", title: "大捷！", text: LEVELS[game.levelIndex].name + " 已下。下一战：" + LEVELS[game.levelIndex + 1].name + shardLine, btn: "进军下一关", showBtn2: true };
   }
-  el.overlay.classList.remove("hidden");
+  startCutscene("win", payload);
   updatePauseUI();
 }
 function lose() {
   game.over = true; game.running = false; game.paused = false;
   Sfx.stopMusic(); Sfx.play("lose");
-  game.overlayMode = "retry";
-  el.ovTitle.textContent = "关隘失守";
-  el.ovText.textContent = "城池被攻破……整军再来，未为晚也。";
-  el.ovBtn.textContent = "重整旗鼓";
-  el.ovBtn.classList.remove("hidden");
-  el.ovBtn2.classList.remove("hidden");
-  el.overlay.classList.remove("hidden");
+  startCutscene("lose", { mode: "retry", title: "关隘失守", text: "城池被攻破……整军再来，未为晚也。", btn: "重整旗鼓", showBtn2: true });
   updatePauseUI();
 }
 function startLevel(i) {
   game.levelIndex = i;
   loadLevel(i);
   const lv = LEVELS[i];
-  game.gold = lv.gold; game.hp = lv.hp; game.over = false;
+  const rb = game.runBuffs; // R22：连续征战增益（起始军粮/城防/刷新费）
+  game.gold = lv.gold + (rb ? rb.goldStart : 0);
+  game.hp = lv.hp + (rb ? rb.hpBonus : 0);
+  game.over = false;
   game.waveIndex = -1; game.spawnQueue = []; game.betweenWaves = true;
   game.enemies = []; game.towers = []; game.projectiles = []; game.floaters = [];
   game.activeBonds = []; game._bondSig = null;
   game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = [];
   game._bossBonus = 0;
+  game.cutscene = null; // R21：清结算过场
   game.paused = false; game.speed = 1;
-  game.refreshCost = GameData.TUNING.recruitBase; game.candidates = []; game.pendingCost = 0;
+  game.refreshCost = Math.max(10, GameData.TUNING.recruitBase - (rb ? rb.refreshCut : 0));
+  game.candidates = []; game.pendingCost = 0;
   Art.clearParticles();
   game.selectedHero = null; game.selectedSlot = null;
   if (el.title) el.title.textContent = lv.name;
@@ -1588,6 +1634,11 @@ function loop(now) {
   game.lastTime = now;
   if (!game.paused) {
     for (let i = 0; i < game.speed; i++) update(dt); // 加速 = 每帧多跑几步
+  }
+  // R21：结算过场推进（独立于 update，game.over 后仍走时）
+  if (game.cutscene && !game.cutscene.done) {
+    game.cutscene.t += dt;
+    if (game.cutscene.t >= game.cutscene.dur) finishCutscene();
   }
   if (game.scene === "battle") draw(); // R19：仅战斗场景绘制战场 canvas
   else if (game.scene === "home" && homeCtx) Art.drawHomeScene(homeCtx, homeCanvas.width, homeCanvas.height, now / 1000);

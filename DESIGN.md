@@ -85,6 +85,13 @@
 
 **R17 武将解锁与碎片招募（已完成，详见 `docs/bosses-and-unlock.md`）**：新增 4 起始 1★ 武将，开局仅 5 将；通关概率掉落全武将碎片（低稀有更高、featured 提升）；碎片招募解锁锁定武将；弹性出战阵容 1~6。
 
+**R20~R24 体验与玩法扩展（用户排期，逐个实现）**：
+- **R20 主界面背景精细版（已完成，详见 `docs/ui-scenes.md`）**：在 R19 程序化关隘背景上提升精细度——星空、山脊轮廓光、飘移云带、飞雁、前景松树剪影、卷动金边军旗、火把余烬、城楼窗呼吸光。静态层离屏缓存，动态层逐帧。
+- **R21 战中结算过场动画（规划中，详见 `docs/cutscene.md`）**：通关/失败从静态弹窗升级为过场动画。
+- **R22 通关三选一增益（规划中，详见 `docs/boons.md`）**：Roguelite 元素，每关通关后三选一局内增益。
+- **R23 魏吴阵营扩充（待细化规模）**：新增魏/吴武将阵营 + 羁绊。
+- **R24 无尽模式（规划中，详见 `docs/endless.md`）**：持续波次 + 难度递增 + 记录。
+
 **R19 UI 场景化 + 真·主界面（已完成，详见 `docs/ui-scenes.md`）**：把「战场常驻 + 弹窗叠加」的伪场景改造为真正的场景状态机。
 - 用户决策：重度程序化背景（新画三国关隘图）/ 养成·图鉴等弹窗全部升级为独立全屏场景 / 逐阶段验收。
 - 新增 `game.scene` + `switchScene()`，场景：home / levelSelect / deck / battle / barracks / codex；战中开战提示·结算·重试仍用 `#overlay`。
@@ -161,6 +168,8 @@
 | R19-1 | 场景骨架 + 关卡选择/选将/战场迁移 | ✅ | ✅ 完成 | index.html + game.js + style.css | game.scene/switchScene；HUD+stage 打包 battle；功能零丢失 |
 | R19-2 | 主界面 home（重度背景+概览条） | ✅ | ✅ 完成 | sprites.js + index.html + game.js + style.css | 程序化关隘背景+轻动画；标题/按钮；通关进度/解锁数/继续 |
 | R19-3 | 养成/图鉴弹窗 → 独立场景 | ✅ | ✅ 完成 | index.html + game.js + style.css | train/codex 场景化；heroDetail 子视图；返回导航统一（sceneReturn） |
+| R20 | 主界面背景精细版 | ✅ | ✅ 完成 | sprites.js | 星空/轮廓光/云带/飞雁/松树剪影/卷动金边军旗/火把余烬/窗呼吸光 |
+| R21 | 战中结算过场动画 | ✅ | ✅ 完成 | sprites.js (drawCutscene) + game.js + style.css | 胜利金光放射/失败城破裂纹 → 揭示结算卡（.cut-reveal 入场）；可点击跳过 |
 
 ## 五、测试进度
 
@@ -213,6 +222,8 @@
 | R19-1 | 场景骨架 + 链路迁移 | MCP 实测 + DOM 校验 | ✅ 完成 | 通过 | 落地 levels 场景（5 章/16 关/8 Boss 标记）；enter→deck→battle（canvas 265 采样在绘制，招贤扣 25 抽 3）→菜单回 levels；codex 22 行/train 弹窗仍可开；零游戏报错 |
 | R19-2 | 主界面 + 背景 + 概览条 | MCP 实测 + canvas 导出 | ✅ 完成 | 通过 | 落地 home（背景 922 采样在绘制：暮色天/远山/城楼/帥旗/火把）；概览「战役进度 第二章 第6/16关 · 武将 6/22 · 继续：夷陵之战」；开始→levels/返回→home/继续→deck/养成·图鉴弹窗/菜单→home 全通；零报错 |
 | R19-3 | 养成/图鉴场景化 | MCP 实测 + DOM 校验 | ✅ 完成 | 通过 | home/levels→图鉴(codex 场景 22 行)→点将→详情子视图(列表隐藏/detailBody 充实/仍在 codex)→返回列表→返回来源；养成(barracks 22 行)同链；sceneReturn 正确回 home/levels；codex 卡 560×607 入屏；零报错 |
+| R20 | 主界面背景精细版 | MCP canvas 导出审阅 | ✅ 完成 | 通过 | 导出 home 背景 PNG 目检：星空/山脊轮廓光/云带/飞雁/前景松树/卷动金边帥旗/火把余烬/窗呼吸光均到位；node --check 通过；无新增报错（getImageData taint 为既有 file:// 立绘问题，与本期无关） |
+| R21 | 战中结算过场动画 | MCP 实测 + 帧导出 | ✅ 完成 | 通过 | win() 后 cutscene 激活(win)、overlay 隐藏；过场结束自动揭示「大捷！/进军下一关/levelClear」带 .cut-reveal；导出 win(p0.72 金光放射+大捷)/lose(p0.62 裂纹+关隘失守)帧目检到位；点击可跳过；无新增报错 |
 
 ---
 

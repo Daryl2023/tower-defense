@@ -295,6 +295,12 @@ body {
   justify-content: center;
 }
 .overlay.hidden { display: none; }
+/* R21：结算卡入场动画（过场结束后揭示） */
+@keyframes cutReveal {
+  0% { opacity: 0; transform: scale(0.82) translateY(12px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.overlay.cut-reveal .overlay-card { animation: cutReveal 0.42s cubic-bezier(0.22, 1.2, 0.36, 1) both; }
 .overlay-card {
   background: var(--panel);
   border: 2px solid var(--accent);

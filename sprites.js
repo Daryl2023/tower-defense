@@ -879,77 +879,139 @@ function clearParticles() { particles.length = 0; }
 // ============================================================
 const _homeCache = { w: 0, h: 0, canvas: null };
 
+// 确定性伪随机（避免 Math.random 让缓存层每次不同）
+function _hashRand(n) { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); }
+
 function _buildHomeStatic(w, h) {
   const off = document.createElement("canvas");
   off.width = w; off.height = h;
   const c = off.getContext("2d");
-  // 天空：暮色渐变
+  // 天空：暮色渐变（顶部加深的靛蓝 → 暖橙地平线）
   const sky = c.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, "#2a1d2e");
-  sky.addColorStop(0.45, "#5a2f2a");
-  sky.addColorStop(0.7, "#8a4a2a");
+  sky.addColorStop(0, "#1a1430");
+  sky.addColorStop(0.28, "#2a1d2e");
+  sky.addColorStop(0.5, "#5a2f2a");
+  sky.addColorStop(0.72, "#8a4a2a");
   sky.addColorStop(1, "#c87a3a");
   c.fillStyle = sky; c.fillRect(0, 0, w, h);
-  // 落日
+  // 星点（仅上半部，越往上越多越亮）
+  for (let i = 0; i < 90; i++) {
+    const sx = _hashRand(i * 2.1) * w;
+    const sy = _hashRand(i * 3.7) * h * 0.42;
+    const a = (1 - sy / (h * 0.42)) * 0.7 * (0.4 + _hashRand(i * 5.3) * 0.6);
+    c.fillStyle = "rgba(255,240,210," + a.toFixed(3) + ")";
+    const r = _hashRand(i * 7.1) < 0.15 ? 1.6 : 0.9;
+    c.beginPath(); c.arc(sx, sy, r, 0, Math.PI * 2); c.fill();
+  }
+  // 落日辉光
   const sunY = h * 0.66, sunX = w * 0.5;
-  const sun = c.createRadialGradient(sunX, sunY, 8, sunX, sunY, h * 0.5);
-  sun.addColorStop(0, "rgba(255,210,130,0.95)");
-  sun.addColorStop(0.18, "rgba(255,170,90,0.55)");
-  sun.addColorStop(1, "rgba(255,150,80,0)");
-  c.fillStyle = sun; c.fillRect(0, 0, w, h);
-  c.fillStyle = "rgba(255,225,160,0.9)";
-  c.beginPath(); c.arc(sunX, sunY, h * 0.075, 0, Math.PI * 2); c.fill();
-  // 远山三层（越远越淡）
+  const halo = c.createRadialGradient(sunX, sunY, 8, sunX, sunY, h * 0.55);
+  halo.addColorStop(0, "rgba(255,210,130,0.95)");
+  halo.addColorStop(0.16, "rgba(255,170,90,0.55)");
+  halo.addColorStop(0.42, "rgba(220,120,70,0.22)");
+  halo.addColorStop(1, "rgba(255,150,80,0)");
+  c.fillStyle = halo; c.fillRect(0, 0, w, h);
+  c.fillStyle = "rgba(255,228,168,0.95)";
+  c.beginPath(); c.arc(sunX, sunY, h * 0.072, 0, Math.PI * 2); c.fill();
+  // 远山四层（越远越淡），向阳侧描一道暖色轮廓光
   const ranges = [
-    { base: h * 0.62, amp: h * 0.10, col: "#6a3b34", step: 0.9 },
-    { base: h * 0.70, amp: h * 0.13, col: "#4e2a28", step: 1.3 },
-    { base: h * 0.80, amp: h * 0.10, col: "#341d1c", step: 1.7 },
+    { base: h * 0.58, amp: h * 0.07, col: "#7a4a40", step: 0.7, rim: "rgba(255,180,110,0.5)" },
+    { base: h * 0.64, amp: h * 0.11, col: "#5e352f", step: 1.0, rim: "rgba(240,150,90,0.42)" },
+    { base: h * 0.72, amp: h * 0.13, col: "#43241f", step: 1.35, rim: "rgba(210,120,70,0.32)" },
+    { base: h * 0.82, amp: h * 0.10, col: "#2c1715", step: 1.75, rim: null },
   ];
   for (const rg of ranges) {
-    c.fillStyle = rg.col;
-    c.beginPath(); c.moveTo(0, h);
-    c.lineTo(0, rg.base);
-    let phase = rg.base;
-    for (let x = 0; x <= w; x += 8) {
+    const pts = [];
+    for (let x = 0; x <= w; x += 6) {
       const y = rg.base
         + Math.sin(x * 0.006 * rg.step) * rg.amp
-        + Math.sin(x * 0.017 * rg.step + 1.3) * rg.amp * 0.4;
-      c.lineTo(x, y);
+        + Math.sin(x * 0.017 * rg.step + 1.3) * rg.amp * 0.4
+        + Math.sin(x * 0.041 * rg.step + 2.1) * rg.amp * 0.16;
+      pts.push([x, y]);
     }
+    c.fillStyle = rg.col;
+    c.beginPath(); c.moveTo(0, h); c.lineTo(0, pts[0][1]);
+    for (const p of pts) c.lineTo(p[0], p[1]);
     c.lineTo(w, h); c.closePath(); c.fill();
+    // 轮廓光：山脊线上靠太阳一侧提亮
+    if (rg.rim) {
+      c.strokeStyle = rg.rim; c.lineWidth = 1.6;
+      c.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const lit = 1 - Math.min(1, Math.abs(pts[i][0] - sunX) / (w * 0.5));
+        if (lit < 0.15) { c.stroke(); c.beginPath(); continue; }
+        if (i === 0 || c._broke) { c.moveTo(pts[i][0], pts[i][1]); }
+        else c.lineTo(pts[i][0], pts[i][1]);
+      }
+      c.stroke();
+    }
   }
   // 关隘城楼剪影（居中偏下，虎牢关意象）
-  _drawGateTower(c, w * 0.5, h * 0.86, w * 0.46, h * 0.40);
+  _drawGateTower(c, w * 0.5, h * 0.86, w * 0.46, h * 0.40, sunX);
+  // 前景松树剪影（左右各一丛，最暗）
+  _drawPines(c, w * 0.085, h * 0.97, h * 0.30, 0);
+  _drawPines(c, w * 0.93, h * 0.99, h * 0.34, 7);
   return off;
 }
 
-// 城楼剪影：城墙 + 雉堞 + 谯楼 + 拱门
-function _drawGateTower(c, cx, baseY, ww, hh) {
+// 前景松树丛剪影
+function _drawPines(c, cx, baseY, hgt, seed) {
+  c.fillStyle = "#140b0a";
+  for (let k = 0; k < 3; k++) {
+    const px = cx + (_hashRand(seed + k * 1.7) - 0.5) * hgt * 0.7;
+    const ph = hgt * (0.7 + _hashRand(seed + k * 2.3) * 0.5);
+    const pw = ph * 0.34;
+    c.fillRect(px - pw * 0.06, baseY - ph * 0.25, pw * 0.12, ph * 0.25); // 树干
+    for (let tier = 0; tier < 4; tier++) {
+      const ty = baseY - ph * 0.18 - tier * ph * 0.2;
+      const tw = pw * (1 - tier * 0.2);
+      c.beginPath();
+      c.moveTo(px, ty - ph * 0.26);
+      c.lineTo(px - tw / 2, ty);
+      c.lineTo(px + tw / 2, ty);
+      c.closePath(); c.fill();
+    }
+  }
+}
+
+// 城楼剪影：城墙 + 雉堞 + 谯楼 + 拱门（sunX 用于受光面提亮）
+function _drawGateTower(c, cx, baseY, ww, hh, sunX) {
   const wallTop = baseY - hh * 0.5;
   const x0 = cx - ww / 2, x1 = cx + ww / 2;
   c.fillStyle = "#241413";
-  // 城墙主体
   c.fillRect(x0, wallTop, ww, baseY - wallTop);
+  // 砖缝横线（淡）
+  c.strokeStyle = "rgba(0,0,0,0.25)"; c.lineWidth = 1;
+  for (let yy = wallTop + 10; yy < baseY; yy += 14) {
+    c.beginPath(); c.moveTo(x0, yy); c.lineTo(x1, yy); c.stroke();
+  }
+  // 受光顶边
+  c.fillStyle = "rgba(255,170,100,0.18)";
+  c.fillRect(x0, wallTop, ww, 3);
   // 雉堞（垛口）
   const merlonW = ww / 18;
   c.fillStyle = "#1c0f0e";
   for (let i = 0; i < 18; i += 2) {
     c.fillRect(x0 + i * merlonW, wallTop - hh * 0.05, merlonW, hh * 0.05);
+    c.fillStyle = "rgba(255,170,100,0.14)";
+    c.fillRect(x0 + i * merlonW, wallTop - hh * 0.05, merlonW, 2);
+    c.fillStyle = "#1c0f0e";
   }
   // 谯楼（城楼主体，居中）
   const tw = ww * 0.30, th = hh * 0.42;
   const tx = cx - tw / 2, ty = wallTop - th;
   c.fillStyle = "#2a1715";
   c.fillRect(tx, ty, tw, th);
-  // 飞檐屋顶（梯形）
+  // 飞檐屋顶（梯形）+ 屋脊提亮
   c.fillStyle = "#3a201c";
   c.beginPath();
   c.moveTo(tx - tw * 0.18, ty);
   c.lineTo(tx + tw * 0.5, ty - th * 0.45);
   c.lineTo(tx + tw * 1.18, ty);
   c.closePath(); c.fill();
-  // 屋脊兽头微翘
-  c.fillRect(tx - tw * 0.18, ty - 2, 4, 6);
+  c.strokeStyle = "rgba(255,180,110,0.3)"; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(tx - tw * 0.18, ty); c.lineTo(tx + tw * 0.5, ty - th * 0.45); c.stroke();
+  c.fillStyle = "#2a1715"; c.fillRect(tx - tw * 0.18, ty - 2, 4, 6);
   c.fillRect(tx + tw * 1.14, ty - 2, 4, 6);
   // 拱门
   const gw = ww * 0.12, gh = hh * 0.34, gx = cx - gw / 2, gy = baseY - gh;
@@ -960,57 +1022,99 @@ function _drawGateTower(c, cx, baseY, ww, hh) {
   c.arc(cx, gy + gw * 0.5, gw / 2, Math.PI, 0);
   c.lineTo(gx + gw, baseY);
   c.closePath(); c.fill();
-  // 城楼窗口微光
-  c.fillStyle = "rgba(255,180,90,0.5)";
+  // 城楼窗口微光（静态底光，动态层再叠闪烁）
+  c.fillStyle = "rgba(255,180,90,0.45)";
   c.fillRect(cx - tw * 0.22, ty + th * 0.35, tw * 0.16, th * 0.3);
   c.fillRect(cx + tw * 0.06, ty + th * 0.35, tw * 0.16, th * 0.3);
 }
 
-// 飘扬军旗（动态）：旗杆 + 摆动旗面 + 帥字
+// 飘扬军旗（动态）：旗杆 + 卷动旗面（贝塞尔上下缘）+ 帥字
 function _drawBanner(c, x, baseY, hgt, t, flip) {
   const poleW = Math.max(3, hgt * 0.02);
+  const dir = flip ? -1 : 1;
   c.fillStyle = "#1a0e0a";
   c.fillRect(x - poleW / 2, baseY - hgt, poleW, hgt);
-  c.fillStyle = "#c8a04a"; // 杆顶矛尖
-  c.beginPath(); c.moveTo(x, baseY - hgt - hgt * 0.06); c.lineTo(x - poleW, baseY - hgt); c.lineTo(x + poleW, baseY - hgt); c.closePath(); c.fill();
-  // 旗面：自顶向下的多段，随时间横向波动
-  const fw = hgt * 0.5 * (flip ? -1 : 1), fh = hgt * 0.42, top = baseY - hgt + hgt * 0.04;
+  // 杆顶矛尖 + 缨穗
+  c.fillStyle = "#c8a04a";
+  c.beginPath(); c.moveTo(x, baseY - hgt - hgt * 0.07); c.lineTo(x - poleW, baseY - hgt); c.lineTo(x + poleW, baseY - hgt); c.closePath(); c.fill();
+  c.fillStyle = "#b03a2a";
+  c.beginPath(); c.arc(x, baseY - hgt, poleW * 1.2, 0, Math.PI * 2); c.fill();
+  // 旗面：随时间整体卷动，用上下两条波动缘围成
+  const fw = hgt * 0.52 * dir, fh = hgt * 0.40, top = baseY - hgt + hgt * 0.05;
+  const seg = 14;
+  const edge = (frac, rowOff) => {
+    const px = x + fw * frac;
+    const roll = Math.sin(t * 2.4 + frac * 5.0) * hgt * 0.05 * frac
+               + Math.sin(t * 4.1 + frac * 9.0) * hgt * 0.02 * frac;
+    return [px, top + fh * rowOff + roll];
+  };
+  // 旗面主体（深红）
   c.fillStyle = "#9a2b22";
   c.beginPath();
-  c.moveTo(x, top);
-  const seg = 10;
-  for (let i = 0; i <= seg; i++) {
-    const ty = top + (fh) * (i / seg);
-    const wave = Math.sin(t * 3 + i * 0.6) * (hgt * 0.04) * (i / seg);
-    c.lineTo(x + fw * (i / seg) + wave, ty);
-  }
-  for (let i = seg; i >= 0; i--) {
-    const ty = top + fh * 0.62 * (i / seg) + fh * 0.2;
-    const wave = Math.sin(t * 3 + i * 0.6) * (hgt * 0.04) * (i / seg);
-    c.lineTo(x + fw * (i / seg) + wave, ty);
-  }
+  let p = edge(0, 0); c.moveTo(p[0], p[1]);
+  for (let i = 1; i <= seg; i++) { p = edge(i / seg, 0); c.lineTo(p[0], p[1]); }
+  for (let i = seg; i >= 0; i--) { p = edge(i / seg, 0.95); c.lineTo(p[0], p[1]); }
   c.closePath(); c.fill();
-  // 帥字
+  // 卷动高光（旗面波峰提亮）
+  c.strokeStyle = "rgba(255,140,110,0.35)"; c.lineWidth = 2;
+  c.beginPath();
+  for (let i = 0; i <= seg; i++) { p = edge(i / seg, 0.48); if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]); }
+  c.stroke();
+  // 旗缘金边
+  c.strokeStyle = "rgba(200,160,74,0.6)"; c.lineWidth = 1.5;
+  c.beginPath();
+  for (let i = 0; i <= seg; i++) { p = edge(i / seg, 0.95); if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]); }
+  c.stroke();
+  // 帥字（随旗微动）
+  const cp = edge(0.5, 0.42);
   c.fillStyle = "#f0e0b0";
   c.font = "bold " + Math.round(hgt * 0.13) + "px serif";
   c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillText("帥", x + fw * 0.5, top + fh * 0.38);
+  c.fillText("帥", cp[0], cp[1]);
   c.textBaseline = "alphabetic";
 }
 
-// 火把（动态）：摇曳火焰 + 光晕
+// 火把（动态）：摇曳火焰 + 光晕 + 升腾余烬
 function _drawTorch(c, x, baseY, t, seed) {
   c.fillStyle = "#1a0e0a"; c.fillRect(x - 2, baseY - 26, 4, 26);
   const flick = 0.7 + Math.sin(t * 9 + seed) * 0.18 + Math.sin(t * 17 + seed) * 0.12;
   const fy = baseY - 30, fr = 10 * flick;
-  const glow = c.createRadialGradient(x, fy, 1, x, fy, fr * 4);
+  const glow = c.createRadialGradient(x, fy, 1, x, fy, fr * 4.5);
   glow.addColorStop(0, "rgba(255,190,90,0.5)");
   glow.addColorStop(1, "rgba(255,150,60,0)");
-  c.fillStyle = glow; c.beginPath(); c.arc(x, fy, fr * 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = glow; c.beginPath(); c.arc(x, fy, fr * 4.5, 0, Math.PI * 2); c.fill();
   c.fillStyle = "#ff8a2a";
   c.beginPath(); c.ellipse(x, fy, fr * 0.6, fr, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = "#ffd24a";
   c.beginPath(); c.ellipse(x, fy + 2, fr * 0.32, fr * 0.6, 0, 0, Math.PI * 2); c.fill();
+  // 余烬：两点周期上升
+  for (let k = 0; k < 2; k++) {
+    const ph = (t * 0.7 + seed + k * 0.5) % 1;
+    const ey = fy - ph * 34, ex = x + Math.sin((t * 3 + k * 2 + seed)) * 5;
+    c.fillStyle = "rgba(255,180,80," + (0.7 * (1 - ph)).toFixed(3) + ")";
+    c.beginPath(); c.arc(ex, ey, 1.6, 0, Math.PI * 2); c.fill();
+  }
+}
+
+// 飞雁（动态）：一行人字雁，缓慢横越天空
+function _drawGeese(c, w, h, time) {
+  const span = w * 1.3;
+  const gx = ((time * 16) % span) - w * 0.15; // 从左缓慢飞向右
+  const gy = h * 0.22 + Math.sin(time * 0.3) * 6;
+  const flap = Math.sin(time * 6);
+  c.strokeStyle = "rgba(30,18,16,0.55)"; c.lineWidth = 2; c.lineCap = "round";
+  for (let i = 0; i < 7; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const rank = Math.ceil(i / 2);
+    const bx = gx - rank * 16, by = gy + rank * 9 * (side > 0 ? 1 : 1);
+    const ax = bx, ay = by;
+    const wing = 6 + flap * 2.2;
+    c.beginPath();
+    c.moveTo(ax - 7, ay + (i % 2 ? wing : -wing) * 0.3 + wing);
+    c.lineTo(ax, ay);
+    c.lineTo(ax + 7, ay + (i % 2 ? -wing : wing) * 0.3 + wing);
+    c.stroke();
+  }
 }
 
 function drawHomeScene(ctx, w, h, time) {
@@ -1019,13 +1123,28 @@ function drawHomeScene(ctx, w, h, time) {
     _homeCache.w = w; _homeCache.h = h;
   }
   ctx.drawImage(_homeCache.canvas, 0, 0);
+  // 飘移云带（暖色薄云，两层不同速）
+  for (let k = 0; k < 3; k++) {
+    const cy = h * (0.30 + k * 0.10);
+    const speed = 8 + k * 5;
+    const cx = ((time * speed) % (w + 360)) - 180;
+    const cg = ctx.createRadialGradient(cx, cy, 6, cx, cy, 170);
+    const a = 0.12 - k * 0.025;
+    cg.addColorStop(0, "rgba(240,180,130," + a + ")");
+    cg.addColorStop(1, "rgba(240,180,130,0)");
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 170, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx - 90, cy + 8, 90, 18, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // 飞雁
+  _drawGeese(ctx, w, h, time);
   // 雾气带（横向飘移）
   const drift = (time * 14) % (w + 200);
   for (let k = 0; k < 2; k++) {
-    const my = h * (0.6 + k * 0.12);
+    const my = h * (0.62 + k * 0.12);
     const mg = ctx.createLinearGradient(0, my - 30, 0, my + 30);
     mg.addColorStop(0, "rgba(220,200,180,0)");
-    mg.addColorStop(0.5, "rgba(220,200,180," + (0.10 - k * 0.03) + ")");
+    mg.addColorStop(0.5, "rgba(220,200,180," + (0.11 - k * 0.03) + ")");
     mg.addColorStop(1, "rgba(220,200,180,0)");
     ctx.fillStyle = mg;
     ctx.save();
@@ -1033,6 +1152,13 @@ function drawHomeScene(ctx, w, h, time) {
     ctx.fillRect(0, my - 30, w + 200, 60);
     ctx.restore();
   }
+  // 城楼窗口呼吸微光（叠在静态底光上）
+  const winA = 0.25 + Math.sin(time * 2.3) * 0.12;
+  const cx = w * 0.5, tw = w * 0.46 * 0.30, th = h * 0.40 * 0.42;
+  const ty = h * 0.86 - h * 0.40 * 0.5 - th;
+  ctx.fillStyle = "rgba(255,190,100," + winA.toFixed(3) + ")";
+  ctx.fillRect(cx - tw * 0.22, ty + th * 0.35, tw * 0.16, th * 0.3);
+  ctx.fillRect(cx + tw * 0.06, ty + th * 0.35, tw * 0.16, th * 0.3);
   // 军旗（左右）+ 火把
   _drawBanner(ctx, w * 0.16, h * 0.92, h * 0.42, time, false);
   _drawBanner(ctx, w * 0.84, h * 0.92, h * 0.42, time, true);
@@ -1045,8 +1171,122 @@ function drawHomeScene(ctx, w, h, time) {
   ctx.fillStyle = vg; ctx.fillRect(0, h * 0.55, w, h * 0.45);
 }
 
+// ============================================================
+// 战中结算过场动画（R21）：胜利金光 / 失败城破，p 为 0→1 进度
+// 绘制在战斗 canvas 上层，纯程序化。
+// ============================================================
+function _easeOut(p) { return 1 - Math.pow(1 - p, 3); }
+function drawCutscene(ctx, w, h, type, p) {
+  p = Math.max(0, Math.min(1, p));
+  const cx = w / 2, cy = h * 0.42;
+  if (type === "win") {
+    // 暗角渐入
+    ctx.fillStyle = "rgba(8,6,2," + (0.55 * Math.min(1, p * 2)).toFixed(3) + ")";
+    ctx.fillRect(0, 0, w, h);
+    // 旋转放射金光
+    const rays = 18, rot = p * 1.4, reach = _easeOut(Math.min(1, p * 1.3)) * Math.hypot(w, h) * 0.6;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < rays; i++) {
+      const a = rot + (i / rays) * Math.PI * 2;
+      ctx.fillStyle = "rgba(255,205,110," + (0.10 + 0.06 * Math.sin(p * 6 + i)).toFixed(3) + ")";
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a - 0.04) * reach, Math.sin(a - 0.04) * reach);
+      ctx.lineTo(Math.cos(a + 0.04) * reach, Math.sin(a + 0.04) * reach);
+      ctx.closePath(); ctx.fill();
+    }
+    // 中心光球
+    const gr = ctx.createRadialGradient(0, 0, 4, 0, 0, reach * 0.5);
+    gr.addColorStop(0, "rgba(255,240,200," + (0.9 * p).toFixed(3) + ")");
+    gr.addColorStop(0.3, "rgba(255,200,110," + (0.5 * p).toFixed(3) + ")");
+    gr.addColorStop(1, "rgba(255,180,90,0)");
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, reach * 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // 上升金色粒子（确定性）
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 28; i++) {
+      const ph = (p * 1.2 + _hashRand(i * 3.1)) % 1;
+      const px = cx + (_hashRand(i * 1.7) - 0.5) * w * 0.7;
+      const py = cy + h * 0.3 - ph * h * 0.5;
+      ctx.fillStyle = "rgba(255,215,130," + (0.8 * (1 - ph) * p).toFixed(3) + ")";
+      ctx.beginPath(); ctx.arc(px, py, 2 + _hashRand(i * 5.3) * 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    // 标题缩放入场
+    const tp = Math.max(0, (p - 0.35) / 0.65);
+    if (tp > 0) {
+      const scale = 0.6 + _easeOut(tp) * 0.4;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = Math.min(1, tp * 1.5);
+      ctx.font = "bold " + Math.round(h * 0.11) + "px serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(120,70,20,0.8)";
+      ctx.strokeText("大 捷", 0, 0);
+      const tg = ctx.createLinearGradient(0, -h * 0.06, 0, h * 0.06);
+      tg.addColorStop(0, "#ffe9b0"); tg.addColorStop(1, "#e0a040");
+      ctx.fillStyle = tg; ctx.fillText("大 捷", 0, 0);
+      ctx.restore();
+    }
+  } else {
+    // 失败：泛红压暗
+    ctx.fillStyle = "rgba(40,6,4," + (0.6 * Math.min(1, p * 2)).toFixed(3) + ")";
+    ctx.fillRect(0, 0, w, h);
+    const red = ctx.createRadialGradient(cx, cy, 10, cx, cy, Math.hypot(w, h) * 0.6);
+    red.addColorStop(0, "rgba(120,20,16," + (0.3 * p).toFixed(3) + ")");
+    red.addColorStop(1, "rgba(60,8,6," + (0.5 * p).toFixed(3) + ")");
+    ctx.fillStyle = red; ctx.fillRect(0, 0, w, h);
+    // 斜向裂纹逐条绘出
+    ctx.strokeStyle = "rgba(20,4,3,0.85)"; ctx.lineWidth = 3; ctx.lineCap = "round";
+    const cracks = 5;
+    for (let i = 0; i < cracks; i++) {
+      const cp = Math.max(0, Math.min(1, (p - i * 0.08) / 0.4));
+      if (cp <= 0) continue;
+      const bx = w * (0.2 + i * 0.16), by = -10;
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      let x = bx, y = by;
+      const segs = 9;
+      for (let s = 1; s <= segs * cp; s++) {
+        x += (_hashRand(i * 7 + s) - 0.35) * w * 0.05;
+        y += h / segs;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // 底部烟尘上涌
+    ctx.globalCompositeOperation = "source-over";
+    for (let i = 0; i < 16; i++) {
+      const ph = (p * 1.1 + _hashRand(i * 2.7)) % 1;
+      const px = (_hashRand(i * 1.3)) * w;
+      const py = h - ph * h * 0.4;
+      const r = 20 + ph * 50;
+      ctx.fillStyle = "rgba(40,30,26," + (0.22 * (1 - ph) * p).toFixed(3) + ")";
+      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    }
+    // 标题抖动下坠
+    const tp = Math.max(0, (p - 0.3) / 0.7);
+    if (tp > 0) {
+      const drop = (1 - _easeOut(tp)) * -h * 0.08;
+      const shake = (1 - tp) * Math.sin(p * 50) * 4;
+      ctx.save();
+      ctx.translate(cx + shake, cy + drop);
+      ctx.globalAlpha = Math.min(1, tp * 1.5);
+      ctx.font = "bold " + Math.round(h * 0.11) + "px serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(20,2,2,0.9)";
+      ctx.strokeText("关隘失守", 0, 0);
+      ctx.fillStyle = "#d4503a"; ctx.fillText("关隘失守", 0, 0);
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 window.Art = {
   SPRITE_ASSETS, IMAGE_OVERRIDES, preloadSprites, drawSprite, getHeroPortrait,
   emitParticles, updateParticles, drawParticles, clearParticles,
-  drawHomeScene,
+  drawHomeScene, drawCutscene,
 };
