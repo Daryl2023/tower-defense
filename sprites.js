@@ -31,7 +31,7 @@ const IMAGE_OVERRIDES = {
   "hero:liubei": {
     img: "assets/heroes/liubei/sheet.png",
     cols: 4, rows: 2, frameW: 364, frameH: 360,
-    frameInset: 0.1,
+    frameInset: 0.04,
     portrait: "assets/heroes/liubei/portrait.png",
     icons: "assets/heroes/liubei/icons.png",
   },
@@ -53,8 +53,10 @@ const IMAGE_OVERRIDES = {
     img: "assets/heroes/zhaoyun/sheet.png",
     cols: 4, rows: 2, frameW: 364, frameH: 360, // 整表 1456×720
     frameInset: 0.1,
+    stripBg: false,
     portrait: "assets/heroes/zhaoyun/portrait.png",
     icons: "assets/heroes/zhaoyun/icons.png",
+    passiveIcon: "assets/heroes/zhaoyun/passive-icon.png",
   },
 };
 (function applyImageOverrides() {
@@ -74,6 +76,7 @@ function loadImage(src, onOk, onErr) {
 // AI 生图常见假透明：棋盘格暗格~96、亮格~144 被画进像素；银甲/白袍通常 >=161
 // 去除低饱和中性灰格（保留有色彩的盔甲/皮肤/特效）
 function stripAICheckerboard(img, opts = {}) {
+  const darkMin = opts.darkMin ?? 55;
   const darkMax = opts.darkMax ?? 158;
   const whiteMin = opts.whiteMin ?? (opts.portrait ? 250 : 238);
   const c = document.createElement("canvas");
@@ -86,8 +89,8 @@ function stripAICheckerboard(img, opts = {}) {
   for (let i = 0; i < d.length; i += 4) {
     const r = d[i], g = d[i + 1], b = d[i + 2];
     if (d[i + 3] === 0) continue;
-    if (Math.abs(r - g) > 18 || Math.abs(g - b) > 18) continue;
-    if ((r >= 85 && r <= darkMax) || r >= whiteMin) d[i + 3] = 0;
+    if (Math.abs(r - g) > 24 || Math.abs(g - b) > 24 || Math.abs(r - b) > 24) continue;
+    if ((r >= darkMin && r <= darkMax) || r >= whiteMin) d[i + 3] = 0;
   }
   ctx.putImageData(id, 0, 0);
   return c;
@@ -98,22 +101,81 @@ function finalizeSpriteImage(im, asset) {
   return stripAICheckerboard(im, { portrait: !asset.cols });
 }
 
+function drawableToDataUrl(drawable) {
+  try {
+    if (!drawable) return null;
+    if (drawable.toDataURL) return drawable.toDataURL("image/png");
+    const c = document.createElement("canvas");
+    c.width = drawable.width;
+    c.height = drawable.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(drawable, 0, 0);
+    return c.toDataURL("image/png");
+  } catch (e) {
+    return null;
+  }
+}
+
 function preloadSprites() {
+  let pending = 0;
+  const done = () => {
+    pending--;
+    if (pending <= 0 && window.onSpritesReady) window.onSpritesReady();
+  };
   for (const id in SPRITE_ASSETS) {
     const a = SPRITE_ASSETS[id];
     if (a.img) {
+      pending++;
       loadImage(a.img, (im) => {
         a._image = finalizeSpriteImage(im, a);
         a._ready = true;
-      }, () => { a._ready = false; });
+        done();
+      }, () => { a._ready = false; done(); });
     }
     if (a.portrait) {
+      pending++;
       loadImage(a.portrait, (im) => {
-        a._portrait = finalizeSpriteImage(im, a);
+        try {
+          a._portrait = finalizeSpriteImage(im, a);
+          a._portraitSrc = drawableToDataUrl(a._portrait) || a.portrait;
+        } catch (e) {
+          a._portrait = im;
+          a._portraitSrc = a.portrait;
+        }
         a._portraitReady = true;
-      });
+        done();
+      }, () => { a._portraitReady = false; done(); });
+    }
+    if (a.icons) {
+      pending++;
+      loadImage(a.icons, (im) => {
+        try {
+          a._icons = finalizeSpriteImage(im, a);
+          a._iconsSrc = drawableToDataUrl(a._icons) || a.icons;
+        } catch (e) {
+          a._icons = im;
+          a._iconsSrc = a.icons;
+        }
+        a._iconsReady = true;
+        done();
+      }, () => { a._iconsReady = false; done(); });
+    }
+    if (a.passiveIcon) {
+      pending++;
+      loadImage(a.passiveIcon, (im) => {
+        try {
+          a._passiveIcon = finalizeSpriteImage(im, { stripBg: false });
+          a._passiveIconSrc = drawableToDataUrl(a._passiveIcon) || a.passiveIcon;
+        } catch (e) {
+          a._passiveIcon = im;
+          a._passiveIconSrc = a.passiveIcon;
+        }
+        a._passiveIconReady = true;
+        done();
+      }, () => { a._passiveIconReady = false; done(); });
     }
   }
+  if (pending === 0 && window.onSpritesReady) window.onSpritesReady();
 }
 
 // 精灵表选帧：0待机 1跑 2~4攻击 5蹲防 6胜利 7受击
@@ -130,7 +192,15 @@ function pickSpriteFrame(a, opts) {
 
 function getHeroPortrait(heroId) {
   const a = SPRITE_ASSETS["hero:" + heroId];
-  return (a && a._portraitReady && a._portrait) ? a.portrait : null;
+  return (a && a._portraitReady && a._portrait) ? (a._portraitSrc || a.portrait) : null;
+}
+function getHeroIcons(heroId) {
+  const a = SPRITE_ASSETS["hero:" + heroId];
+  return (a && a._iconsReady && a._icons) ? (a._iconsSrc || a.icons) : null;
+}
+function getHeroPassiveIcon(heroId) {
+  const a = SPRITE_ASSETS["hero:" + heroId];
+  return (a && a._passiveIconReady && a._passiveIcon) ? (a._passiveIconSrc || a.passiveIcon) : null;
 }
 
 // ---------- R6-A: 统一绘制入口 ----------
@@ -1286,7 +1356,7 @@ function drawCutscene(ctx, w, h, type, p) {
 }
 
 window.Art = {
-  SPRITE_ASSETS, IMAGE_OVERRIDES, preloadSprites, drawSprite, getHeroPortrait,
+  SPRITE_ASSETS, IMAGE_OVERRIDES, preloadSprites, drawSprite, getHeroPortrait, getHeroIcons, getHeroPassiveIcon,
   emitParticles, updateParticles, drawParticles, clearParticles,
   drawHomeScene, drawCutscene,
 };

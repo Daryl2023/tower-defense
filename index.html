@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>三国塔防 · 虎牢关之战</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=20260613-r27-aspect" />
 </head>
 <body>
   <div id="app">
@@ -21,8 +21,7 @@
           <div id="homeOverview" class="home-overview"></div>
           <div class="home-actions">
             <button id="homeStart" class="btn home-btn-main">开始游戏</button>
-            <button id="homeTrain" class="btn btn-ghost">养成</button>
-            <button id="homeCodex" class="btn btn-ghost">图鉴</button>
+            <button id="homeHeroes" class="btn btn-ghost">武将府</button>
           </div>
         </div>
       </div>
@@ -36,8 +35,7 @@
         <div id="menuList" class="menu-list"></div>
         <div class="overlay-btns">
           <button id="levelsBack" class="btn btn-ghost">返回主界面</button>
-          <button id="trainBtn" class="btn btn-ghost">养成</button>
-          <button id="codexBtn" class="btn btn-ghost">图鉴</button>
+          <button id="heroesBtn" class="btn btn-ghost">武将府</button>
         </div>
       </div>
     </section>
@@ -47,7 +45,11 @@
       <div class="scene-card deck-card">
         <h2 id="deckTitle">选将出战</h2>
         <p id="deckIntro" class="train-tip"></p>
-        <div id="deckGrid" class="deck-grid"></div>
+        <div id="deckIntel" class="level-intel"></div>
+        <div class="deck-layout">
+          <div id="deckGrid" class="deck-grid"></div>
+          <aside id="deckDetail" class="deck-detail"></aside>
+        </div>
         <div class="deck-foot">
           <span id="deckCount" class="deck-count">已选 0/6</span>
           <div class="overlay-btns">
@@ -114,13 +116,34 @@
       </div>
     </section>
 
-    <!-- ===== 场景：图鉴（R19-3）：列表 + 详情子视图 ===== -->
+    <!-- ===== 场景：武将府（R25-1）：列表 + 详情子视图 ===== -->
     <section id="sceneCodex" class="scene">
       <div class="scene-card codex-card">
         <div id="codexListView">
-          <h2>图鉴</h2>
-          <p class="train-tip">点击任一武将查看详细属性、技能与羁绊。</p>
+          <h2>武将府</h2>
+          <p class="train-tip">点击任一武将查看属性、碎片、升级、被动与羁绊。</p>
           <h3 class="codex-h">武将</h3>
+          <div class="codex-tools">
+            <label>排序
+              <select id="codexSort">
+                <option value="rarity">星级</option>
+                <option value="rank">等级</option>
+                <option value="owned">拥有</option>
+                <option value="arch">兵种</option>
+                <option value="name">姓名</option>
+              </select>
+            </label>
+            <label>筛选
+              <select id="codexFilter">
+                <option value="all">全部</option>
+                <option value="owned">已拥有</option>
+                <option value="locked">未拥有</option>
+                <option value="arch:spear">枪兵</option>
+                <option value="arch:archer">弓兵</option>
+                <option value="arch:strategist">谋士</option>
+              </select>
+            </label>
+          </div>
           <div id="codexHeroes" class="codex-list"></div>
           <h3 class="codex-h">羁绊</h3>
           <div id="codexBonds" class="codex-list"></div>
@@ -128,25 +151,16 @@
         </div>
         <div id="codexDetailView" class="hidden">
           <div id="detailBody"></div>
-          <button id="detailBack" class="btn">返回图鉴</button>
+          <button id="detailBack" class="btn">返回武将府</button>
         </div>
       </div>
     </section>
 
-    <!-- ===== 场景：武将养成（R19-3）===== -->
-    <section id="sceneBarracks" class="scene">
-      <div class="scene-card codex-card">
-        <h2>武将养成</h2>
-        <p class="train-tip">通关掉落专属碎片，消耗碎片永久升级；升至 Lv.3 解锁被动。</p>
-        <div id="trainList" class="codex-list"></div>
-        <button id="trainClose" class="btn">返回</button>
-      </div>
-    </section>
   </div>
 
-  <script src="data.js"></script>
-  <script src="sprites.js"></script>
-  <script src="audio.js"></script>
-  <script src="game.js"></script>
+  <script src="data.js?v=20260613-r27-aspect"></script>
+  <script src="sprites.js?v=20260613-r27-aspect"></script>
+  <script src="audio.js?v=20260613-r27-aspect"></script>
+  <script src="game.js?v=20260613-r27-aspect"></script>
 </body>
 </html>

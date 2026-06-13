@@ -92,8 +92,8 @@ const game = {
   pendingCost: 0,
   cutscene: null,  // R21：结算过场动画状态
   runBuffs: null,  // R22：连续征战增益累加器（freshRunBuffs）
-  scene: "home",   // R19：场景状态机 home / levels / deck / battle / barracks / codex
-  sceneReturn: "home", // R19：离开 barracks/codex 时返回的场景
+  scene: "home",   // R19/R25：场景状态机 home / levels / deck / battle / codex(武将府)
+  sceneReturn: "home", // 离开武将府时返回的场景
 };
 
 // ===== 存档（R7-2 / R9-1 扩展 shards/ranks）=====
@@ -227,16 +227,17 @@ const el = {
   recruitBtn: document.getElementById("recruitBtn"),
   recruitCost: document.getElementById("recruitCost"),
   candidates: document.getElementById("candidates"),
-  codexBtn: document.getElementById("codexBtn"),
+  heroesBtn: document.getElementById("heroesBtn"),
   codexHeroes: document.getElementById("codexHeroes"),
   codexBonds: document.getElementById("codexBonds"),
   codexClose: document.getElementById("codexClose"),
-  trainBtn: document.getElementById("trainBtn"),
-  trainList: document.getElementById("trainList"),
-  trainClose: document.getElementById("trainClose"),
+  codexSort: document.getElementById("codexSort"),
+  codexFilter: document.getElementById("codexFilter"),
   deckTitle: document.getElementById("deckTitle"),
   deckIntro: document.getElementById("deckIntro"),
+  deckIntel: document.getElementById("deckIntel"),
   deckGrid: document.getElementById("deckGrid"),
+  deckDetail: document.getElementById("deckDetail"),
   deckCount: document.getElementById("deckCount"),
   deckStart: document.getElementById("deckStart"),
   deckBack: document.getElementById("deckBack"),
@@ -244,16 +245,15 @@ const el = {
   detailBack: document.getElementById("detailBack"),
 };
 el.recruitBtn.addEventListener("click", drawRecruit);
-el.codexBtn.addEventListener("click", openCodex);
+el.heroesBtn.addEventListener("click", openCodex);
 el.codexClose.addEventListener("click", () => leaveSubScene());
-el.trainBtn.addEventListener("click", openTrain);
-el.trainClose.addEventListener("click", () => leaveSubScene());
+if (el.codexSort) el.codexSort.addEventListener("change", () => openCodex({ keepView: true }));
+if (el.codexFilter) el.codexFilter.addEventListener("change", () => openCodex({ keepView: true }));
 el.deckStart.addEventListener("click", confirmDeck);
 el.deckBack.addEventListener("click", () => showMenu());
 // R19 主界面 / 关卡选择导航
 document.getElementById("homeStart").addEventListener("click", () => showMenu());
-document.getElementById("homeTrain").addEventListener("click", openTrain);
-document.getElementById("homeCodex").addEventListener("click", openCodex);
+document.getElementById("homeHeroes").addEventListener("click", openCodex);
 document.getElementById("levelsBack").addEventListener("click", () => showHome());
 el.detailBack.addEventListener("click", () => showCodexList());
 
@@ -265,13 +265,45 @@ function unlockAudio() { Sfx.init(); updateMuteUI(); }
 window.addEventListener("pointerdown", unlockAudio, { once: true });
 window.addEventListener("keydown", unlockAudio, { once: true });
 
-// ===== 图鉴（R8-5）：数据来自 GameData，自动渲染 =====
+// ===== 武将府（R25-1）：图鉴 + 养成合并，数据来自 GameData 自动渲染 =====
 const ARCH_LABEL = { archer: "弓", spear: "枪", strategist: "谋" };
+const ARCH_FULL_LABEL = { archer: "弓兵", spear: "枪兵", strategist: "谋士" };
 function heroPortraitImg(id, cls) {
   const src = Art.getHeroPortrait(id);
-  return src ? `<img class="${cls}" src="${src}" alt="">` : "";
+  if (src) return `<img class="${cls}" src="${src}" alt="">`;
+  const h = HEROES[id];
+  const arch = ARCH_LABEL[h.arch] || "";
+  const star = RARITY[h.rarity].star;
+  return `<span class="${cls} hero-fallback" style="--hero-color:${h.color || "#8a6a3a"}">` +
+    `<span class="hf-mark">${arch}</span><span class="hf-name">${h.name.slice(0, 1)}</span><span class="hf-star">${star}</span>` +
+    `</span>`;
 }
-// R19-3：图鉴/养成场景化 —— 子视图切换 + 统一返回
+function heroRoleTags(id) {
+  const h = HEROES[id], tags = [];
+  const splash = h.splash != null ? h.splash : ARCHETYPES[h.arch].splash;
+  if (h.arch === "archer") tags.push("远程");
+  if (h.arch === "spear") tags.push("近战");
+  if (h.arch === "strategist" || splash > 0) tags.push("范围");
+  const p = h.passive && h.passive.params ? h.passive.params : {};
+  if (h.passive && h.passive.type === "aura") tags.push("光环");
+  if (p.stunChance || p.slowDur) tags.push("控制");
+  if (p.goldBonus) tags.push("经济");
+  if (p.armorBreak) tags.push("破甲");
+  if (p.execute) tags.push("收割");
+  if (p.critChance || p.distBonus || p.growthPerWave) tags.push("输出");
+  return [...new Set(tags)].slice(0, 3);
+}
+function tagHtml(tags, cls = "hero-tags") {
+  return `<span class="${cls}">${tags.map((t) => `<em>${t}</em>`).join("")}</span>`;
+}
+function heroSkillArtHtml(id) {
+  const src = Art.getHeroPassiveIcon && Art.getHeroPassiveIcon(id);
+  if (!src) return "";
+  const h = HEROES[id];
+  const pasName = h.passive ? h.passive.name : "技能";
+  return `<span class="dt-passive-icon"><img src="${src}" alt="${h.name}${pasName}图标"></span>`;
+}
+// R25-1：武将府场景 —— 列表/详情子视图切换 + 统一返回
 function showCodexList() {
   document.getElementById("codexListView").classList.remove("hidden");
   document.getElementById("codexDetailView").classList.add("hidden");
@@ -280,28 +312,54 @@ function showCodexDetail() {
   document.getElementById("codexListView").classList.add("hidden");
   document.getElementById("codexDetailView").classList.remove("hidden");
 }
-// 离开图鉴/养成场景：返回来源场景（home 则刷新概览条）
+// 离开武将府场景：返回来源场景（home 则刷新概览条）
 function leaveSubScene() {
   const ret = game.sceneReturn || "home";
   if (ret === "home") renderHomeOverview();
   else if (ret === "levels") renderMenuList();
   switchScene(ret);
 }
-function openCodex() {
-  game.sceneReturn = game.scene;
-  el.codexHeroes.innerHTML = Object.keys(HEROES).map((id) => {
+function codexHeroIds() {
+  const filter = el.codexFilter ? el.codexFilter.value : "all";
+  const sort = el.codexSort ? el.codexSort.value : "rarity";
+  const archOrder = { spear: 0, archer: 1, strategist: 2 };
+  const ids = Object.keys(HEROES).filter((id) => {
+    if (filter === "owned") return isUnlocked(id);
+    if (filter === "locked") return !isUnlocked(id);
+    if (filter.startsWith("arch:")) return HEROES[id].arch === filter.slice(5);
+    return true;
+  });
+  ids.sort((a, b) => {
+    const ha = HEROES[a], hb = HEROES[b];
+    const ownedDiff = Number(isUnlocked(b)) - Number(isUnlocked(a));
+    if (sort === "owned") return ownedDiff || hb.rarity - ha.rarity || ha.name.localeCompare(hb.name, "zh-Hans-CN");
+    if (sort === "rank") return heroRank(b) - heroRank(a) || ownedDiff || hb.rarity - ha.rarity || ha.name.localeCompare(hb.name, "zh-Hans-CN");
+    if (sort === "arch") return (archOrder[ha.arch] ?? 9) - (archOrder[hb.arch] ?? 9) || hb.rarity - ha.rarity || ha.name.localeCompare(hb.name, "zh-Hans-CN");
+    if (sort === "name") return ha.name.localeCompare(hb.name, "zh-Hans-CN") || hb.rarity - ha.rarity;
+    return hb.rarity - ha.rarity || ownedDiff || ha.name.localeCompare(hb.name, "zh-Hans-CN");
+  });
+  return ids;
+}
+function openCodex(opts = {}) {
+  if (game.scene !== "codex") game.sceneReturn = game.scene;
+  const ids = codexHeroIds();
+  el.codexHeroes.innerHTML = ids.map((id) => {
     const h = HEROES[id];
     const locked = !isUnlocked(id);
+    const rank = heroRank(id), sh = heroShards(id), cost = rankUpCost(id);
+    const status = locked
+      ? `未招募 · ${sh}/${recruitCost(id)} 碎`
+      : (cost ? `Lv.${rank}/${maxRank()} · ${sh}/${cost} 碎升级` : `Lv.${rank}/${maxRank()} · 已满级`);
     const costTag = locked
-      ? `<span class="cx-cost lock">🔒 ${recruitCost(id)} 碎招募</span>`
-      : `<span class="cx-cost">部署 ${RARITY[h.rarity].deployCost}</span>`;
+      ? `<span class="cx-cost lock">招募</span>`
+      : `<span class="cx-cost">${cost ? (canRankUp(id) ? "可升级" : "待碎片") : "满级"}</span>`;
     return `<div class="codex-row hero-row ${locked ? "locked" : ""}" data-id="${id}">${heroPortraitImg(id, "cx-portrait")}` +
-      `<span class="cx-name">${h.name}</span>` +
-      `<span class="cx-fac">${ARCH_LABEL[h.arch]}</span>` +
-      `<span class="cx-star">${RARITY[h.rarity].star}</span>` +
-      `<span class="cx-desc">${h.trait || ""}</span>` +
+      `<div class="cx-main"><div><span class="cx-name">${h.name}</span>` +
+      `<span class="cx-star">${RARITY[h.rarity].star}</span><span class="cx-fac">${ARCH_LABEL[h.arch]}</span></div>` +
+      `<div class="cx-desc">${h.trait || ""}</div>${tagHtml(heroRoleTags(id))}</div>` +
+      `<span class="cx-progress">${status}</span>` +
       costTag + `</div>`;
-  }).join("");
+  }).join("") || `<div class="codex-empty">没有符合条件的武将</div>`;
   el.codexHeroes.querySelectorAll(".hero-row").forEach((row) => {
     row.addEventListener("click", () => openHeroDetail(row.dataset.id));
   });
@@ -311,7 +369,7 @@ function openCodex() {
       `<span class="cx-desc">${b.desc}</span></div>` +
       `<div style="font-size:11px;color:#8a7a62;padding:0 12px 2px">需：${names}</div>`;
   }).join("");
-  showCodexList();
+  if (!opts.keepView) showCodexList();
   switchScene("codex");
 }
 
@@ -321,7 +379,17 @@ function computeHeroPreview(id) {
   return towerStats({ hero: id, arch: HEROES[id].arch, level: 1 });
 }
 function bondsOfHero(id) { return BONDS.filter((b) => b.heroes.includes(id)); }
-function openHeroDetail(id) {
+function heroActionHtml(id) {
+  const locked = !isUnlocked(id);
+  if (locked) {
+    const rc = recruitCost(id);
+    return `<button class="train-up recruit detail-action" data-detail-recruit="${id}" ${canRecruit(id) ? "" : "disabled"}>招募 (${rc} 碎)</button>`;
+  }
+  if (heroRank(id) >= maxRank()) return `<button class="train-up maxed detail-action" disabled>满级</button>`;
+  const cost = rankUpCost(id);
+  return `<button class="train-up detail-action" data-detail-rank="${id}" ${canRankUp(id) ? "" : "disabled"}>升级 (${cost} 碎)</button>`;
+}
+function buildHeroDetailHtml(id) {
   const h = HEROES[id];
   const s = computeHeroPreview(id);
   const rank = heroRank(id), sh = heroShards(id);
@@ -331,12 +399,16 @@ function openHeroDetail(id) {
     : `<div class="dt-meta">永久升级 Lv.${rank}/${maxRank()}　专属碎片 ${sh}</div>`;
   const aps = (1 / s.fireRate).toFixed(2);
   const splashStr = s.splash > 0 ? s.splash : "单体";
+  const nextCost = rankUpCost(id);
+  const nextLine = locked
+    ? `招募后可加入选将与战斗招贤池`
+    : (nextCost ? `下一级需要 ${nextCost} 碎片` : `已达到永久升级上限`);
   const pas = h.passive;
   const unlocked = pas && passiveUnlocked(id);
   const pasHtml = pas
-    ? `<div class="dt-passive ${unlocked ? "on" : ""}"><b>「${pas.name}」</b>` +
+    ? `<div class="dt-passive ${unlocked ? "on" : ""}">${heroSkillArtHtml(id)}<div class="dt-passive-text"><b>「${pas.name}」</b>` +
         (unlocked ? `<span class="dt-on"> · 已解锁</span>` : `<span class="dt-off"> · 升级 Lv.${pas.unlockRank} 解锁</span>`) +
-        `<br>${pas.desc}</div>`
+        `<br>${pas.desc}</div></div>`
     : `<div class="dt-passive">该武将暂无被动</div>`;
   const bonds = bondsOfHero(id);
   const bondHtml = bonds.length
@@ -344,11 +416,13 @@ function openHeroDetail(id) {
         `<span class="dt-bond-need">需 ${b.heroes.map((x) => HEROES[x].name).join("·")}</span>` +
         `<div class="dt-bond-desc">${b.desc}</div></div>`).join("")
     : `<div class="dt-bond-desc">暂无可参与的羁绊</div>`;
-  el.detailBody.innerHTML =
+  return (
+    `<div class="hero-detail" data-hero-detail="${id}">` +
     `<div class="dt-head">${heroPortraitImg(id, "dt-portrait")}` +
       `<div class="dt-title">` +
         `<div class="dt-name">${h.name} <span class="dt-star">${RARITY[h.rarity].star}</span></div>` +
-        `<div class="dt-sub">${h.faction}国 · ${ARCH_LABEL[h.arch]}兵 · ${h.trait || ""}</div>` +
+        `<div class="dt-sub">${h.faction}国 · ${ARCH_FULL_LABEL[h.arch]} · ${h.trait || ""}</div>` +
+        tagHtml(heroRoleTags(id), "hero-tags detail-tags") +
         metaLine +
       `</div></div>` +
     `<div class="dt-stats">` +
@@ -358,63 +432,46 @@ function openHeroDetail(id) {
       `<div class="dt-stat"><span>溅射</span><b>${splashStr}</b></div>` +
     `</div>` +
     `<div class="dt-tip">※ 属性为 Lv.1 战斗形态（含当前永久升级），实战另受羁绊/光环加成</div>` +
+    `<div class="dt-section">养成</div>` +
+    `<div class="dt-grow"><span>${nextLine}</span>${heroActionHtml(id)}</div>` +
     `<div class="dt-section">被动技能</div>` + pasHtml +
-    `<div class="dt-section">参与羁绊</div>` + bondHtml;
+    `<div class="dt-section">参与羁绊</div>` + bondHtml +
+    `</div>`
+  );
+}
+function bindHeroDetailActions(root, id, after) {
+  root.querySelectorAll("[data-detail-rank]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const hid = b.dataset.detailRank;
+      if (rankUp(hid)) { flash(HEROES[hid].name + " 升至 Lv." + heroRank(hid)); after(hid); }
+    });
+  });
+  root.querySelectorAll("[data-detail-recruit]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const hid = b.dataset.detailRecruit;
+      if (recruitHero(hid)) { flash("已招募 " + HEROES[hid].name + "！"); Sfx.play("recruit"); after(hid); }
+    });
+  });
+}
+function openHeroDetail(id) {
+  el.detailBody.innerHTML = buildHeroDetailHtml(id);
+  bindHeroDetailActions(el.detailBody, id, (hid) => {
+    openCodex();
+    openHeroDetail(hid);
+  });
   showCodexDetail();
 }
 
-// ===== 养成界面（R9-5）：碎片升级 + 被动解锁 =====
-function renderTrainList() {
-  el.trainList.innerHTML = Object.keys(HEROES).map((id) => {
-    const h = HEROES[id];
-    const rank = heroRank(id), sh = heroShards(id), max = maxRank();
-    const locked = !isUnlocked(id);
-    const maxed = rank >= max;
-    const cost = rankUpCost(id);
-    const can = canRankUp(id);
-    const pas = h.passive;
-    const pasHtml = pas
-      ? `<div class="train-passive">被动「${pas.name}」` + (passiveUnlocked(id)
-          ? `<span class="on"> · 已解锁</span>：${pas.desc}`
-          : `<span class="off"> · Lv.${pas.unlockRank} 解锁</span>：${pas.desc}`) + `</div>`
-      : "";
-    let btn;
-    if (locked) {
-      const rc = recruitCost(id);
-      btn = `<button class="train-up recruit" data-recruit="${id}" ${canRecruit(id) ? "" : "disabled"}>招募 (${rc} 碎)</button>`;
-    } else if (maxed) {
-      btn = `<button class="train-up maxed" disabled>满级</button>`;
-    } else {
-      btn = `<button class="train-up" data-id="${id}" ${can ? "" : "disabled"}>升级 (${cost} 碎)</button>`;
-    }
-    const metaLine = locked
-      ? `<div class="train-meta"><span class="tr-lock">未招募</span> · <span class="tr-shard">碎片 ${sh}</span></div>`
-      : `<div class="train-meta"><span class="tr-rank">升级 Lv.${rank}/${max}</span> · <span class="tr-shard">碎片 ${sh}</span></div>`;
-    return `<div class="train-row ${maxed ? "maxed" : ""} ${locked ? "locked" : ""}">` +
-      heroPortraitImg(id, "cx-portrait") +
-      `<div class="train-info">` +
-        `<div class="train-name">${h.name}<span class="tr-star">${RARITY[h.rarity].star}</span>${locked ? '<span class="tr-locktag">🔒</span>' : ""}</div>` +
-        metaLine +
-        pasHtml +
-      `</div>` + btn + `</div>`;
-  }).join("");
-  el.trainList.querySelectorAll(".train-up[data-id]").forEach((b) => {
-    b.addEventListener("click", () => {
-      const id = b.dataset.id;
-      if (rankUp(id)) { flash(HEROES[id].name + " 升至 Lv." + heroRank(id)); renderTrainList(); }
-    });
-  });
-  el.trainList.querySelectorAll(".train-up[data-recruit]").forEach((b) => {
-    b.addEventListener("click", () => {
-      const id = b.dataset.recruit;
-      if (recruitHero(id)) { flash("已招募 " + HEROES[id].name + "！"); Sfx.play("recruit"); renderTrainList(); }
-    });
-  });
-}
-function openTrain() {
-  game.sceneReturn = game.scene;
-  renderTrainList();
-  switchScene("barracks");
+function refreshHeroArtUI() {
+  if (game.scene === "codex") {
+    const detailVisible = !document.getElementById("codexDetailView").classList.contains("hidden");
+    const currentDetail = detailVisible ? el.detailBody.querySelector("[data-hero-detail]")?.dataset.heroDetail : null;
+    openCodex();
+    if (currentDetail) openHeroDetail(currentDetail);
+  } else if (game.scene === "deck") {
+    renderDeckGrid();
+  }
+  renderCandidates();
 }
 
 // ===== 工具 =====
@@ -432,6 +489,19 @@ function buildPathBlockSet(cells) {
 function cellKey(c, r) { return c + "," + r; }
 function distance(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
 function towerAt(c, r) { return game.towers.find((t) => t.c === c && t.r === r) || null; }
+function levelRules() {
+  const lv = LEVELS[game.levelIndex];
+  return (lv && lv.rules) || {};
+}
+function ruleFor(mapName, key, fallback = 1) {
+  const rules = levelRules();
+  const map = rules[mapName];
+  return map && map[key] != null ? map[key] : fallback;
+}
+function ruleScalar(name, fallback = 1) {
+  const rules = levelRules();
+  return rules[name] != null ? rules[name] : fallback;
+}
 
 function towerStats(tw) {
   const a = ARCHETYPES[tw.arch];
@@ -625,10 +695,13 @@ function onSkillButton(key) {
   }
   updateSkillUI();
 }
+function skillCooldown(key) {
+  return SKILLS[key].cd * ruleFor("skillCdMul", key, 1);
+}
 
 function castTargetedSkill(key, x, y) {
   const sk = SKILLS[key];
-  game.skillReady[key] = game.time + sk.cd;
+  game.skillReady[key] = game.time + skillCooldown(key);
   game.targeting = null;
   if (key === "fire") {
     areaDamage(x, y, sk.radius, sk.damage);
@@ -645,7 +718,7 @@ function castTargetedSkill(key, x, y) {
 
 function castInstantSkill(key) {
   const sk = SKILLS[key];
-  game.skillReady[key] = game.time + sk.cd;
+  game.skillReady[key] = game.time + skillCooldown(key);
   if (key === "fort") {
     Sfx.play("skill_fort");
     for (const en of game.enemies) {
@@ -679,7 +752,7 @@ el.menuBtn.addEventListener("click", () => showHome());
 
 // ===== 场景状态机（R19）=====
 // 每个场景是一个全屏 <section class="scene">，互斥显隐。switchScene 仅管 DOM 显隐 + 记录状态。
-const SCENE_IDS = { home: "sceneHome", levels: "sceneLevels", deck: "sceneDeck", battle: "sceneBattle", barracks: "sceneBarracks", codex: "sceneCodex" };
+const SCENE_IDS = { home: "sceneHome", levels: "sceneLevels", deck: "sceneDeck", battle: "sceneBattle", codex: "sceneCodex" };
 function switchScene(name) {
   game.scene = name;
   for (const key of Object.keys(SCENE_IDS)) {
@@ -772,15 +845,32 @@ function enterLevel(i) {
 
 // ===== 选将界面（R10-2）：8 选 6 出战阵容 =====
 let deckDraft = [];
+let deckDetailHero = null;
 function showDeckSelect(i) {
   game.pendingLevel = i;
   deckDraft = normalizeDeck(meta.deck);
+  deckDetailHero = deckDraft[0] || unlockedIds()[0] || null;
   const lv = LEVELS[i];
   el.deckTitle.textContent = (i + 1) + ". " + lv.name + " · 选将出战";
   const fid = lv.featured;
   el.deckIntro.textContent = lv.intro + (fid && HEROES[fid] ? `（本关「${HEROES[fid].name}」碎片掉落提升）` : "");
+  renderLevelIntel(lv);
   renderDeckGrid();
   switchScene("deck");
+}
+function renderLevelIntel(lv) {
+  if (!el.deckIntel) return;
+  const threats = Array.isArray(lv.threats) ? lv.threats : [];
+  const recommends = Array.isArray(lv.recommends) ? lv.recommends : [];
+  const tags = Array.isArray(lv.tags) ? lv.tags : [];
+  const rulesText = Array.isArray(lv.rulesText) ? lv.rulesText : [];
+  el.deckIntel.innerHTML =
+    `<div class="intel-head"><span>敌情</span>${tags.map((t) => `<em>${t}</em>`).join("")}</div>` +
+    `<div class="intel-grid">` +
+      `<div><b>主要威胁</b>${threats.length ? threats.map((x) => `<p>${x}</p>`).join("") : "<p>常规混编部队</p>"}</div>` +
+      `<div><b>推荐应对</b>${recommends.length ? recommends.map((x) => `<p>${x}</p>`).join("") : "<p>均衡布阵，保留军粮补位</p>"}</div>` +
+      `<div><b>战场规则</b>${rulesText.length ? rulesText.map((x) => `<p>${x}</p>`).join("") : "<p>无额外规则</p>"}</div>` +
+    `</div>`;
 }
 function renderDeckGrid() {
   el.deckGrid.innerHTML = unlockedIds().map((id) => {
@@ -791,25 +881,54 @@ function renderDeckGrid() {
     const pasHtml = pas
       ? `<div class="dk-pas ${passiveUnlocked(id) ? "on" : ""}">${passiveUnlocked(id) ? "★" + pas.name : pas.name + " Lv." + pas.unlockRank}</div>`
       : "";
-    return `<div class="deck-cell ${on ? "on" : ""}" data-id="${id}">` +
-      `<div class="dk-check">✓</div>` +
+    return `<div class="deck-cell ${on ? "on" : ""} ${deckDetailHero === id ? "focus" : ""}" data-id="${id}">` +
+      `<button class="dk-check" type="button" data-toggle="${id}" title="${on ? "移出阵容" : "加入阵容"}">${on ? "✓" : "+"}</button>` +
       heroPortraitImg(id, "dk-portrait") +
       `<div class="dk-name">${h.name} <span class="dk-star">${RARITY[h.rarity].star}</span></div>` +
-      `<div class="dk-meta">升级 Lv.${rank}</div>` +
+      `<div class="dk-meta"><span>${ARCH_LABEL[h.arch]}</span><span>Lv.${rank}</span></div>` +
+      tagHtml(heroRoleTags(id), "hero-tags dk-tags") +
       pasHtml + `</div>`;
   }).join("");
   el.deckGrid.querySelectorAll(".deck-cell").forEach((cell) => {
-    cell.addEventListener("click", () => toggleDeckCell(cell.dataset.id));
+    cell.addEventListener("click", () => showDeckHeroDetail(cell.dataset.id));
   });
+  el.deckGrid.querySelectorAll("[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleDeckCell(btn.dataset.toggle);
+    });
+  });
+  renderDeckDetail();
   const n = deckDraft.length;
   el.deckCount.textContent = "已选 " + n + "/" + DECK_SIZE + "（至少 1）";
   el.deckCount.classList.toggle("full", n === DECK_SIZE);
   el.deckStart.disabled = n < 1 || n > DECK_SIZE;
 }
+function showDeckHeroDetail(id) {
+  deckDetailHero = id;
+  renderDeckGrid();
+}
+function renderDeckDetail() {
+  if (!el.deckDetail) return;
+  if (!deckDetailHero) {
+    el.deckDetail.innerHTML = `<div class="deck-empty">暂无可选武将</div>`;
+    return;
+  }
+  const on = deckDraft.includes(deckDetailHero);
+  el.deckDetail.innerHTML = buildHeroDetailHtml(deckDetailHero) +
+    `<button class="btn deck-detail-toggle" data-deck-detail-toggle="${deckDetailHero}">${on ? "移出阵容" : "加入阵容"}</button>`;
+  bindHeroDetailActions(el.deckDetail, deckDetailHero, (hid) => {
+    deckDetailHero = hid;
+    renderDeckGrid();
+  });
+  const btn = el.deckDetail.querySelector("[data-deck-detail-toggle]");
+  if (btn) btn.addEventListener("click", () => toggleDeckCell(deckDetailHero));
+}
 function toggleDeckCell(id) {
   const idx = deckDraft.indexOf(id);
   if (idx >= 0) deckDraft.splice(idx, 1);
   else { if (deckDraft.length >= DECK_SIZE) { flash("最多选 " + DECK_SIZE + " 将"); return; } deckDraft.push(id); }
+  deckDetailHero = id;
   renderDeckGrid();
 }
 function confirmDeck() {
@@ -901,14 +1020,18 @@ function startNextWave() {
 function spawnEnemy(type, pos) {
   const def = ENEMY_TYPES[type];
   const scale = 1 + game.waveIndex * HP_SCALE_PER_WAVE;
+  const hpMul = ruleFor("enemyHpMul", type, 1);
+  const speedMul = ruleFor("enemySpeedMul", type, 1);
+  const rewardMul = ruleFor("enemyRewardMul", type, ruleScalar("rewardMul", 1));
+  const castleMul = ruleFor("castleDamageMul", type, 1);
   game.enemies.push({
     type, spriteKey: "enemy:" + type,
     x: pos ? pos.x : path[0].x, y: pos ? pos.y : path[0].y,
-    hp: def.hp * scale, maxHp: def.hp * scale,
-    speed: def.speed, reward: def.reward, radius: def.radius, color: def.color,
-    castleDmg: def.castleDmg, seg: pos ? pos.seg : 0, walk: Math.random() * 6.28, hitFlash: 0,
-    armor: def.armor || 0,
-    heal: def.heal || 0, healRadius: def.healRadius || 0, healCd: def.healCd || 0, healTimer: def.healCd || 0,
+    hp: def.hp * scale * hpMul, maxHp: def.hp * scale * hpMul,
+    speed: def.speed * speedMul, reward: Math.max(1, Math.round(def.reward * rewardMul)), radius: def.radius, color: def.color,
+    castleDmg: Math.max(1, Math.round(def.castleDmg * castleMul)), seg: pos ? pos.seg : 0, walk: Math.random() * 6.28, hitFlash: 0,
+    armor: (def.armor || 0) + ruleFor("enemyArmorBonus", type, 0),
+    heal: (def.heal || 0) * (type === "healer" ? ruleScalar("healerPowerMul", 1) : 1), healRadius: def.healRadius || 0, healCd: def.healCd || 0, healTimer: def.healCd || 0,
     _auraSpeed: 1, _auraArmor: 0,
   });
 }
@@ -917,15 +1040,19 @@ function spawnEnemy(type, pos) {
 function spawnBoss(id) {
   const def = BOSSES[id];
   if (!def) return;
+  const hpMul = ruleFor("enemyHpMul", "boss", 1);
+  const speedMul = ruleFor("enemySpeedMul", "boss", 1);
+  const rewardMul = ruleFor("enemyRewardMul", "boss", ruleScalar("rewardMul", 1));
+  const castleMul = ruleFor("castleDamageMul", "boss", 1);
   const en = {
     type: "boss", bossId: id, boss: true, name: def.name, title: def.title || "",
     spriteKey: "boss:" + id,
     x: path[0].x, y: path[0].y,
-    hp: def.hp, maxHp: def.hp,
-    speed: def.speed, reward: def.reward, radius: def.radius, color: def.color,
-    castleDmg: def.castleDmg, shardBonus: def.shardBonus || 0,
+    hp: def.hp * hpMul, maxHp: def.hp * hpMul,
+    speed: def.speed * speedMul, reward: Math.max(1, Math.round(def.reward * rewardMul)), radius: def.radius, color: def.color,
+    castleDmg: Math.max(1, Math.round(def.castleDmg * castleMul)), shardBonus: def.shardBonus || 0,
     seg: 0, walk: Math.random() * 6.28, hitFlash: 0,
-    armor: def.armor || 0,
+    armor: (def.armor || 0) + ruleFor("enemyArmorBonus", "boss", 0),
     heal: 0, healRadius: 0, healCd: 0, healTimer: 0,
     abilities: def.abilities, abilTimers: def.abilities.map((ab) => ab.everySec || 0),
     controlResist: 1, dmgReduction: 0, _enraged: false, _auraSpeed: 1, _auraArmor: 0,
@@ -1291,9 +1418,7 @@ function reachCastle(en) {
 // ===== 渲染 =====
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGrid();
-  drawPath();
-  drawCastle();
+  drawBattlefield();
   drawTowers();
   drawEnemies();
   drawProjectiles();
@@ -1352,25 +1477,93 @@ function drawTargeting() {
   ctx.beginPath(); ctx.arc(game.mouse.x, game.mouse.y, sk.radius, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = "rgba(255,138,58,0.15)"; ctx.fill();
 }
-function drawGrid() {
-  ctx.strokeStyle = "rgba(0,0,0,0.12)"; ctx.lineWidth = 1;
-  for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c * TILE, 0); ctx.lineTo(c * TILE, canvas.height); ctx.stroke(); }
-  for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0, r * TILE); ctx.lineTo(canvas.width, r * TILE); ctx.stroke(); }
+function drawBattlefield() {
+  const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  g.addColorStop(0, "#35532b");
+  g.addColorStop(0.58, "#294520");
+  g.addColorStop(1, "#21381d");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(78,91,65,0.26)";
+  ctx.beginPath();
+  ctx.moveTo(0, 58);
+  for (let x = 0; x <= canvas.width; x += 120) {
+    ctx.lineTo(x + 60, 34 + Math.sin(x * 0.03) * 12);
+    ctx.lineTo(x + 120, 62);
+  }
+  ctx.lineTo(canvas.width, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(218,225,190,0.06)";
+  ctx.fillRect(0, 78, canvas.width, 26);
+
+  for (let i = 0; i < 42; i++) {
+    const x = (i * 151 + 37) % canvas.width;
+    const y = (i * 89 + 61) % canvas.height;
+    if (isNearPath(x, y, TILE * 0.5)) continue;
+    ctx.fillStyle = i % 2 ? "rgba(20,50,20,0.10)" : "rgba(88,120,62,0.10)";
+    ctx.beginPath();
+    ctx.ellipse(x, y, 46 + (i % 5) * 13, 18 + (i % 3) * 7, (i % 9) * 0.31, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 130; i++) {
+    const x = (i * 97) % canvas.width;
+    const y = (i * 53 + 29) % canvas.height;
+    if (isNearPath(x, y, TILE * 0.38)) continue;
+    ctx.strokeStyle = i % 3 ? "rgba(88,136,62,0.22)" : "rgba(205,190,128,0.15)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 4 + (i % 6), y - 2 - (i % 4));
+    ctx.stroke();
+  }
+  drawPath();
+  drawCastle();
+}
+function isNearPath(x, y, radius) {
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len2 = vx * vx + vy * vy || 1;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * vx + (y - a.y) * vy) / len2));
+    const px = a.x + vx * t, py = a.y + vy * t;
+    if (distance(x, y, px, py) <= radius) return true;
+  }
+  return false;
 }
 function drawPath() {
-  ctx.strokeStyle = "#7a6242"; ctx.lineWidth = TILE * 0.7; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  if (!path.length) return;
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(62,43,25,0.45)"; ctx.lineWidth = TILE * 0.92;
   ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
   for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.strokeStyle = "#8f6b3f"; ctx.lineWidth = TILE * 0.72;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(204,169,99,0.32)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y - TILE * 0.36);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y - TILE * 0.36);
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y + TILE * 0.36);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y + TILE * 0.36);
   ctx.stroke();
 }
 function drawCastle() {
   const last = path[path.length - 1];
-  ctx.fillStyle = "#5a4a8a"; ctx.fillRect(last.x - 6, last.y - TILE / 2, TILE / 2 + 6, TILE);
+  ctx.fillStyle = "rgba(30,20,15,0.35)";
+  ctx.fillRect(last.x - 16, last.y - TILE / 2 - 7, TILE * 0.9, TILE + 14);
+  ctx.fillStyle = "#5b4533";
+  ctx.fillRect(last.x - 10, last.y - TILE / 2, TILE * 0.72, TILE);
+  ctx.fillStyle = "#7b6042";
+  ctx.fillRect(last.x - 14, last.y - TILE / 2 - 12, TILE * 0.84, 14);
   ctx.fillStyle = "#c8a04a"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
-  ctx.fillText("关", last.x + 16, last.y + 6);
+  ctx.fillText("关", last.x + 17, last.y + 6);
 }
 function drawTowers() {
-  for (const tw of game.towers) {
+  const labelSlots = [];
+  const towers = game.towers.slice().sort((a, b) => a.y - b.y);
+  for (const tw of towers) {
     const hero = HEROES[tw.hero];
     const s = towerStats(tw);
     if (game.selectedSlot === tw) {
@@ -1396,16 +1589,55 @@ function drawTowers() {
     ctx.beginPath(); ctx.ellipse(tw.x, tw.y + 18, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
     // 待机呼吸浮动
     const bob = Math.sin(game.time * 2 + tw.phase) * 1.5;
+    const size = tw.hero === "zhaoyun" ? 76 : 48;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     Art.drawSprite(ctx, "hero:" + tw.hero, tw.x, tw.y - 4 + bob, {
-      size: 44, angle: tw.angle, attack: tw.attackAnim, t: game.time + tw.phase,
+      size, angle: tw.angle, attack: tw.attackAnim, t: game.time + tw.phase,
     });
     // 武将名 + 等级点
-    ctx.fillStyle = "#f0e6d2"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(hero.name, tw.x, tw.y - 30);
+    drawTowerLabel(tw, hero, labelSlots);
     for (let i = 0; i < tw.level; i++) {
       ctx.fillStyle = "#f0e6d2"; ctx.beginPath(); ctx.arc(tw.x - 9 + i * 9, tw.y + 26, 2.5, 0, Math.PI * 2); ctx.fill();
     }
   }
+}
+function drawTowerLabel(tw, hero, slots) {
+  let y = tw.y - (tw.hero === "zhaoyun" ? 42 : 34);
+  const w = Math.max(30, hero.name.length * 13 + 12);
+  const h = 17;
+  for (let guard = 0; guard < 6; guard++) {
+    const hit = slots.some((s) => Math.abs(s.x - tw.x) < (s.w + w) / 2 && Math.abs(s.y - y) < h + 2);
+    if (!hit) break;
+    y -= h + 3;
+  }
+  slots.push({ x: tw.x, y, w });
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillStyle = "rgba(30,20,14,0.66)";
+  roundRect(ctx, tw.x - w / 2, y - h / 2, w, h, 6);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(216,178,92,0.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#f3ead6";
+  ctx.fillText(hero.name, tw.x, y + 0.5);
+  ctx.restore();
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 function drawEnemies() {
   for (const en of game.enemies) {
@@ -1646,6 +1878,7 @@ function loop(now) {
 }
 
 // ===== 启动 =====
+window.onSpritesReady = refreshHeroArtUI;
 Art.preloadSprites();
 const _save = loadSave();
 game.maxUnlocked = _save.maxUnlocked;
