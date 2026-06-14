@@ -1438,7 +1438,8 @@ function update(dt) {
       if (en._enraged) factor *= en.enrageSpeed || 1;
     }
     const step = stunned ? 0 : en.speed * factor * dt;
-    en.walk += step * (en.boss ? 0.035 : 0.07);
+    const stride = en.radius * (en.boss ? 3.8 : 5.2);
+    en.walk += step / stride;
     if (en.hitFlash > 0) en.hitFlash -= dt;
     if (step > 0 && d <= step) { en.x = target.x; en.y = target.y; en.seg += 1; }
     else if (step > 0) { en.x += (dx / d) * step; en.y += (dy / d) * step; }
@@ -2013,8 +2014,8 @@ function drawTowers() {
     ctx.fillStyle = "rgba(26,18,12,0.6)";
     ctx.beginPath(); ctx.ellipse(tw.x, tw.y + 18, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
     // 待机呼吸浮动
-    const bob = Math.sin(game.time * 2 + tw.phase) * 1.5;
-    const size = tw.hero === "zhaoyun" ? 76 : 48;
+    const bob = Math.sin(game.time * 2 + tw.phase) * 1.2;
+    const size = tw.hero === "zhaoyun" ? 58 : 42;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     Art.drawSprite(ctx, "hero:" + tw.hero, tw.x, tw.y - 4 + bob, {
@@ -2028,7 +2029,7 @@ function drawTowers() {
   }
 }
 function drawTowerLabel(tw, hero, slots) {
-  let y = tw.y - (tw.hero === "zhaoyun" ? 42 : 34);
+  let y = tw.y - (tw.hero === "zhaoyun" ? 36 : 30);
   const w = Math.max(30, hero.name.length * 13 + 12);
   const h = 17;
   for (let guard = 0; guard < 6; guard++) {
@@ -2066,22 +2067,17 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 function drawEnemies() {
   for (const en of game.enemies) {
-    const size = en.radius * 2.4;
+    const size = en.radius * 2.85;
     const a = path[Math.max(0, Math.min(en.seg || 0, path.length - 1))] || en;
     const b = path[Math.max(0, Math.min((en.seg || 0) + 1, path.length - 1))] || { x: en.x + 1, y: en.y };
     const dirLen = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const dirX = (b.x - a.x) / dirLen, dirY = (b.y - a.y) / dirLen;
-    const phase = en.walk || 0;
-    const bob = Math.sin(phase * Math.PI * 2) * Math.min(2.4, en.radius * 0.14);
-    const contact = (1 + Math.cos(phase * Math.PI * 4)) * 0.5;
+    const dirX = (b.x - a.x) / dirLen;
     const sheetFoot = en.boss ? en.y + en.radius * 0.18 : en.y + en.radius * 0.50;
-    const drawY = sheetFoot - size * 0.46 + bob;
-    const shadowPulse = 0.88 + contact * 0.18;
+    const drawY = sheetFoot - size * 0.46;
     const flipX = dirX < -0.06;
     // 阴影
     ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath(); ctx.ellipse(en.x, sheetFoot + 2, en.radius * (0.82 + contact * 0.16), en.radius * (0.20 + contact * 0.07), 0, 0, Math.PI * 2); ctx.fill();
-    if (!en.boss && contact > 0.82) drawFootDust(en.x - dirX * en.radius * 0.2, sheetFoot + 2, dirX, dirY, contact);
+    ctx.beginPath(); ctx.ellipse(en.x, sheetFoot + 2, en.radius * 0.86, en.radius * 0.21, 0, 0, Math.PI * 2); ctx.fill();
     if (en.boss) {
       ctx.strokeStyle = "rgba(255,210,74,0.55)"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(en.x, sheetFoot + 1, en.radius * 1.1, en.radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
@@ -2089,7 +2085,7 @@ function drawEnemies() {
     ctx.save();
     ctx.translate(en.x, drawY);
     Art.drawSprite(ctx, en.spriteKey || ("enemy:" + en.type), 0, 0, {
-      size, walk: en.walk, flipX, scale: 1 + contact * 0.01, flashAlpha: en.hitFlash > 0 ? en.hitFlash / 0.12 * 0.7 : 0,
+      size, walk: en.walk, flipX, flashAlpha: en.hitFlash > 0 ? en.hitFlash / 0.12 * 0.7 : 0,
     });
     ctx.restore();
     if (en.boss) {

@@ -24,7 +24,7 @@ assert(game.includes("drawBuildPads();"), "build pads should always render on ba
 assert(game.includes('ctx.fillText("塔"'), "deploy pads should show tower label");
 assert(game.includes("请点在箭塔平台上"), "build pad feedback missing");
 assert(sprites.includes("opts.flipX"), "sprite flip support missing");
-assert(/v=20260614-r59-pad5-up-left/.test(html), "R49 cache-busting version missing");
+assert(/v=20260614-r61-walk-2frame/.test(html), "R49 cache-busting version missing");
 
 console.log(JSON.stringify({
   ok: true,

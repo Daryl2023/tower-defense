@@ -243,8 +243,8 @@ function pickSpriteFrame(a, opts) {
   if (a.rows === 1 && a.cols >= 4) {
     if ((opts.flashAlpha || 0) > 0) return Math.min(2, a.cols - 1);
     const walk = opts.walk || 0;
-    const frames = 2;
-    return Math.floor(walk * frames) % frames;
+    // 敌兵精灵表：0/1 为左右脚行走，2 受击 3 倒地，行走仅用前两帧
+    return Math.floor(walk * 2) % 2;
   }
   if (attack < 1) {
     const t = 1 - attack;
