@@ -24,10 +24,11 @@ assert(sprites.includes("stripBg: false"), "zhaoyun transparent sheet should byp
 
 const css = read("style.css");
 assert(css.includes("aspect-ratio: 960 / 600"), "battle canvas display aspect ratio should be locked");
-assert(css.includes("flex: 0 0 180px"), "shop sidebar should not stretch the canvas");
+assert(css.includes("align-items: start"), "stage children should not stretch the canvas vertically");
+assert(css.includes("max-height: calc(100vh - 116px)"), "shop sidebar should scroll instead of stretching the canvas");
 assert(css.includes("#game {"), "game canvas style missing");
 
 const html = read("index.html");
-assert(html.includes("v=20260613-r27-aspect"), "battlefield cache-busting version missing");
+assert(/v=202606(?:13|14)-r(27-aspect|28-battle-ui|29-prebattle-ui|30-polish|31-state-card|32-global-polish|33-hud-layout|34-state-colors|35-ui-quality|38-uiue-assets|39-battlefield-integration|40-path-anchors|41-result-report|42-home-command|43-campaign-map|44-battlefield-grounding|45-deck-command|46-codex-command|50-path-tuning|51-battle-left-polish|52-hulao-pad-only)/.test(html), "battlefield cache-busting version missing");
 
 console.log(JSON.stringify({ ok: true, checks: ["battlefield", "zhaoyun-size", "label-avoidance", "canvas-aspect"] }, null, 2));

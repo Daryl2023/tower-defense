@@ -15,22 +15,23 @@ function pngSize(rel) {
   return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20), colorType };
 }
 
-const portrait = pngSize("assets/heroes/zhaoyun/portrait.png");
-const sheet = pngSize("assets/heroes/zhaoyun/sheet.png");
+const portrait = pngSize("assets/uiue/heroes/zhaoyun/portrait.png");
+const sheet = pngSize("assets/uiue/heroes/zhaoyun/sheet.png");
 const icons = pngSize("assets/heroes/zhaoyun/icons.png");
-const passiveIcon = pngSize("assets/heroes/zhaoyun/passive-icon.png");
+const passiveIcon = pngSize("assets/uiue/heroes/zhaoyun/passive-icon.png");
 
-assert(portrait.w === 848 && portrait.h === 1264, "zhaoyun portrait should use 赵云立绘1.png");
-assert(sheet.w === 1456 && sheet.h === 720, "zhaoyun sheet should use 赵云精灵表1.png");
+assert(portrait.w === 896 && portrait.h === 1200, "zhaoyun portrait should use UIUE 赵云立绘.png");
+assert(sheet.w === 1376 && sheet.h === 768, "zhaoyun sheet should use UIUE 赵云精灵表.png");
 assert(icons.w === 1264 && icons.h === 848, "zhaoyun icons should use 赵云技能1.png");
-assert(passiveIcon.w === 256 && passiveIcon.h === 256, "zhaoyun passive icon should be a single 256x256 icon");
+assert(passiveIcon.w === 1024 && passiveIcon.h === 1024, "zhaoyun passive icon should use UIUE 赵云技能.png");
 assert(portrait.colorType === 6 && sheet.colorType === 6 && icons.colorType === 6 && passiveIcon.colorType === 6, "zhaoyun runtime assets should be RGBA PNGs");
 
 const sprites = read("sprites.js");
 assert(sprites.includes('"hero:zhaoyun"'), "zhaoyun image override missing");
-assert(sprites.includes("cols: 4, rows: 2, frameW: 364, frameH: 360"), "zhaoyun sheet grid config missing");
+assert(sprites.includes("assets/uiue/heroes/zhaoyun/sheet.png"), "zhaoyun UIUE sheet config missing");
+assert(sprites.includes("cols: 4, rows: 2, frameW: 344, frameH: 384"), "zhaoyun UIUE sheet grid config missing");
 assert(sprites.includes("stripBg: false"), "zhaoyun transparent sheet should bypass runtime bg stripping");
-assert(sprites.includes("passiveIcon: \"assets/heroes/zhaoyun/passive-icon.png\""), "zhaoyun passive icon config missing");
+assert(sprites.includes("passiveIcon: \"assets/uiue/heroes/zhaoyun/passive-icon.png\""), "zhaoyun UIUE passive icon config missing");
 assert(sprites.includes("getHeroPassiveIcon"), "getHeroPassiveIcon missing");
 assert(sprites.includes("_iconsSrc"), "processed icon data URL missing");
 assert(sprites.includes("a._portraitSrc = a.portrait"), "portrait fallback to original path missing");
@@ -52,7 +53,7 @@ assert(!css.includes(".dt-skill-art.single"), "old separated skill art style sho
 
 const html = read("index.html");
 assert(html.includes("codexSort") && html.includes("codexFilter"), "codex sort/filter controls missing");
-assert(html.includes("v=20260613-r27-aspect"), "cache-busting asset version missing");
+assert(/v=202606(?:13|14)-r(27-aspect|28-battle-ui|29-prebattle-ui|30-polish|31-state-card|32-global-polish|33-hud-layout|34-state-colors|35-ui-quality|38-uiue-assets|39-battlefield-integration|40-path-anchors|41-result-report|42-home-command|43-campaign-map|44-battlefield-grounding|45-deck-command|46-codex-command|50-path-tuning|51-battle-left-polish|52-hulao-pad-only)/.test(html), "cache-busting asset version missing");
 
 console.log(JSON.stringify({
   ok: true,

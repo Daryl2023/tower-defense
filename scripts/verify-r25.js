@@ -100,6 +100,7 @@ for (const sample of ruleSamples) {
 const overrides = global.Art.IMAGE_OVERRIDES;
 for (const [assetId, cfg] of Object.entries(overrides)) {
   for (const key of ["img", "portrait", "icons"]) {
+    if (!cfg[key]) continue;
     assert(fs.existsSync(path.join(root, cfg[key])), `${assetId}.${key} file missing: ${cfg[key]}`);
   }
 }

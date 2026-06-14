@@ -10,9 +10,29 @@ const ctx = canvas.getContext("2d");
 const homeCanvas = document.getElementById("homeCanvas");
 const homeCtx = homeCanvas ? homeCanvas.getContext("2d") : null;
 
+// R40/R57：虎牢关路径 — 按用户标注 24 点重采样（2026-06-14）
+const HULAO_VISUAL_PATH = [
+  { x: -20, y: 212 }, { x: 48, y: 212 }, { x: 89, y: 216 }, { x: 145, y: 210 },
+  { x: 201, y: 213 }, { x: 238, y: 218 }, { x: 265, y: 232 }, { x: 301, y: 245 },
+  { x: 311, y: 278 }, { x: 317, y: 317 }, { x: 343, y: 346 }, { x: 381, y: 359 },
+  { x: 432, y: 371 }, { x: 469, y: 379 }, { x: 517, y: 378 }, { x: 559, y: 357 },
+  { x: 587, y: 331 }, { x: 602, y: 309 }, { x: 603, y: 292 }, { x: 620, y: 280 },
+  { x: 638, y: 268 }, { x: 656, y: 262 }, { x: 672, y: 258 }, { x: 688, y: 258 },
+  { x: 704, y: 262 }, { x: 718, y: 272 }, { x: 732, y: 286 }, { x: 748, y: 298 },
+  { x: 800, y: 295 }, { x: 822, y: 280 }, { x: 845, y: 262 }, { x: 870, y: 240 },
+  { x: 895, y: 218 }, { x: 918, y: 210 }, { x: 935, y: 190 }, { x: 955, y: 170 },
+];
+// 用户标注 7 处木塔平台（沿路两侧，960×600）
+const HULAO_BUILD_PADS = [
+  { x: 224, y: 153 }, { x: 230, y: 284 }, { x: 408, y: 296 }, { x: 523, y: 288 },
+  { x: 653, y: 298 }, { x: 660, y: 190 }, { x: 373, y: 216 },
+];
+const BUILD_PAD_SNAP = 40;
+
 // 关卡当前状态（由 loadLevel 填充）
 let path = [];
 let pathBlocked = new Set();
+let buildPads = [];
 let waves = [];
 
 // ===== 数据配置（R8-1）：全部来自 data.js 的 window.GameData =====
@@ -54,8 +74,16 @@ const UPGRADE_COST_MULT = GameData.TUNING.upgradeCostMult;
 
 function loadLevel(i) {
   const lv = LEVELS[i];
-  path = lv.cells.map((p) => ({ x: p.c * TILE + TILE / 2, y: p.r * TILE + TILE / 2 }));
-  pathBlocked = buildPathBlockSet(lv.cells);
+  if (i === 0) {
+    path = buildLinearPath(HULAO_VISUAL_PATH, 4);
+    buildPads = HULAO_BUILD_PADS.map((p) => ({ ...p }));
+    pathBlocked = new Set();
+    mergeVisualPathBlocks(pathBlocked, path, TILE * 0.46);
+  } else {
+    path = lv.cells.map((p) => ({ x: p.c * TILE + TILE / 2, y: p.r * TILE + TILE / 2 }));
+    buildPads = [];
+    pathBlocked = buildPathBlockSet(lv.cells);
+  }
   waves = lv.waves;
 }
 
@@ -83,6 +111,7 @@ const game = {
   skillReady: { fire: 0, fort: 0 },
   targeting: null,
   blasts: [],
+  battleNotice: null,
   overlayMode: null,
   paused: false,
   speed: 1,
@@ -215,6 +244,10 @@ const el = {
   overlay: document.getElementById("overlay"),
   ovTitle: document.getElementById("ovTitle"),
   ovText: document.getElementById("ovText"),
+  ovBadge: document.getElementById("ovBadge"),
+  ovSummary: document.getElementById("ovSummary"),
+  ovRewards: document.getElementById("ovRewards"),
+  ovNext: document.getElementById("ovNext"),
   ovBtn: document.getElementById("ovBtn"),
   ovBtn2: document.getElementById("ovBtn2"),
   menuList: document.getElementById("menuList"),
@@ -233,9 +266,14 @@ const el = {
   codexClose: document.getElementById("codexClose"),
   codexSort: document.getElementById("codexSort"),
   codexFilter: document.getElementById("codexFilter"),
+  codexMetrics: document.getElementById("codexMetrics"),
+  codexResultCount: document.getElementById("codexResultCount"),
   deckTitle: document.getElementById("deckTitle"),
   deckIntro: document.getElementById("deckIntro"),
   deckIntel: document.getElementById("deckIntel"),
+  deckMetrics: document.getElementById("deckMetrics"),
+  deckSlots: document.getElementById("deckSlots"),
+  deckDetailState: document.getElementById("deckDetailState"),
   deckGrid: document.getElementById("deckGrid"),
   deckDetail: document.getElementById("deckDetail"),
   deckCount: document.getElementById("deckCount"),
@@ -243,6 +281,7 @@ const el = {
   deckBack: document.getElementById("deckBack"),
   detailBody: document.getElementById("detailBody"),
   detailBack: document.getElementById("detailBack"),
+  detailBackTop: document.getElementById("detailBackTop"),
 };
 el.recruitBtn.addEventListener("click", drawRecruit);
 el.heroesBtn.addEventListener("click", openCodex);
@@ -256,6 +295,7 @@ document.getElementById("homeStart").addEventListener("click", () => showMenu())
 document.getElementById("homeHeroes").addEventListener("click", openCodex);
 document.getElementById("levelsBack").addEventListener("click", () => showHome());
 el.detailBack.addEventListener("click", () => showCodexList());
+if (el.detailBackTop) el.detailBackTop.addEventListener("click", () => showCodexList());
 
 // ===== 音效（R12）=====
 function updateMuteUI() { if (el.muteBtn) el.muteBtn.textContent = Sfx.isMuted() ? "🔇" : "🔊"; }
@@ -340,24 +380,52 @@ function codexHeroIds() {
   });
   return ids;
 }
+function codexMetricsHtml(ids) {
+  const all = Object.keys(HEROES);
+  const owned = all.filter((id) => isUnlocked(id)).length;
+  const upgradable = all.filter((id) => isUnlocked(id) && canRankUp(id)).length;
+  const recruitable = all.filter((id) => !isUnlocked(id) && canRecruit(id)).length;
+  return `<div><span>武将</span><b>${all.length}</b></div>` +
+    `<div><span>已拥有</span><b>${owned}</b></div>` +
+    `<div><span>可升级</span><b>${upgradable}</b></div>` +
+    `<div><span>可招募</span><b>${recruitable}</b></div>` +
+    `<div><span>当前筛选</span><b>${ids.length}</b></div>`;
+}
+function codexStateFor(id) {
+  if (!isUnlocked(id)) return canRecruit(id) ? "recruitable" : "locked";
+  if (heroRank(id) >= maxRank()) return "maxed";
+  return canRankUp(id) ? "upgradable" : "waiting";
+}
+function codexStateLabel(state) {
+  return {
+    recruitable: "可招募",
+    locked: "未招募",
+    upgradable: "可升级",
+    waiting: "待碎片",
+    maxed: "满级",
+  }[state] || "军籍";
+}
 function openCodex(opts = {}) {
   if (game.scene !== "codex") game.sceneReturn = game.scene;
   const ids = codexHeroIds();
+  if (el.codexMetrics) el.codexMetrics.innerHTML = codexMetricsHtml(ids);
+  if (el.codexResultCount) el.codexResultCount.textContent = ids.length + " 名";
   el.codexHeroes.innerHTML = ids.map((id) => {
     const h = HEROES[id];
     const locked = !isUnlocked(id);
     const rank = heroRank(id), sh = heroShards(id), cost = rankUpCost(id);
+    const state = codexStateFor(id);
     const status = locked
       ? `未招募 · ${sh}/${recruitCost(id)} 碎`
       : (cost ? `Lv.${rank}/${maxRank()} · ${sh}/${cost} 碎升级` : `Lv.${rank}/${maxRank()} · 已满级`);
     const costTag = locked
-      ? `<span class="cx-cost lock">招募</span>`
+      ? `<span class="cx-hint">${sh}/${recruitCost(id)} 碎 · 详情招募</span>`
       : `<span class="cx-cost">${cost ? (canRankUp(id) ? "可升级" : "待碎片") : "满级"}</span>`;
-    return `<div class="codex-row hero-row ${locked ? "locked" : ""}" data-id="${id}">${heroPortraitImg(id, "cx-portrait")}` +
+    return `<div class="codex-row hero-row ${locked ? "locked" : ""}" data-state="${state}" data-id="${id}">${heroPortraitImg(id, "cx-portrait")}` +
       `<div class="cx-main"><div><span class="cx-name">${h.name}</span>` +
       `<span class="cx-star">${RARITY[h.rarity].star}</span><span class="cx-fac">${ARCH_LABEL[h.arch]}</span></div>` +
       `<div class="cx-desc">${h.trait || ""}</div>${tagHtml(heroRoleTags(id))}</div>` +
-      `<span class="cx-progress">${status}</span>` +
+      `<span class="cx-state">${codexStateLabel(state)}</span><span class="cx-progress">${status}</span>` +
       costTag + `</div>`;
   }).join("") || `<div class="codex-empty">没有符合条件的武将</div>`;
   el.codexHeroes.querySelectorAll(".hero-row").forEach((row) => {
@@ -365,9 +433,11 @@ function openCodex(opts = {}) {
   });
   el.codexBonds.innerHTML = BONDS.map((b) => {
     const names = b.heroes.map((id) => HEROES[id].name).join("·");
-    return `<div class="codex-row"><span class="cx-name">${b.name}</span>` +
-      `<span class="cx-desc">${b.desc}</span></div>` +
-      `<div style="font-size:11px;color:#8a7a62;padding:0 12px 2px">需：${names}</div>`;
+    const ownedCount = b.heroes.filter((id) => isUnlocked(id)).length;
+    return `<div class="bond-row"><div><span class="cx-name">${b.name}</span>` +
+      `<span class="bond-need-line">需：${names}</span></div>` +
+      `<span class="bond-owned">${ownedCount}/${b.heroes.length}</span>` +
+      `<div class="cx-desc">${b.desc}</div></div>`;
   }).join("");
   if (!opts.keepView) showCodexList();
   switchScene("codex");
@@ -486,6 +556,89 @@ function buildPathBlockSet(cells) {
   }
   return set;
 }
+function mergeVisualPathBlocks(set, points, radius) {
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const len = distance(a.x, a.y, b.x, b.y);
+    const steps = Math.max(1, Math.ceil(len / 10));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const c0 = Math.floor(x / TILE);
+      const r0 = Math.floor(y / TILE);
+      for (let dc = -1; dc <= 1; dc++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const c = c0 + dc, r = r0 + dr;
+          if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
+          const cx = c * TILE + TILE / 2, cy = r * TILE + TILE / 2;
+          if (distance(x, y, cx, cy) <= radius) set.add(cellKey(c, r));
+        }
+      }
+    }
+  }
+}
+function catmullRomPoint(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return {
+    x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  };
+}
+function buildLinearPath(anchors, step) {
+  if (anchors.length < 2) return anchors.map((p) => ({ ...p }));
+  const out = [{ ...anchors[0] }];
+  for (let i = 1; i < anchors.length; i++) {
+    const a = anchors[i - 1], b = anchors[i];
+    const segLen = distance(a.x, a.y, b.x, b.y);
+    const steps = Math.max(1, Math.ceil(segLen / step));
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return out;
+}
+function buildSmoothPath(anchors, step) {
+  if (anchors.length < 2) return anchors.map((p) => ({ ...p }));
+  const dense = [];
+  const samples = 10;
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const p0 = anchors[Math.max(0, i - 1)];
+    const p1 = anchors[i];
+    const p2 = anchors[i + 1];
+    const p3 = anchors[Math.min(anchors.length - 1, i + 2)];
+    for (let s = 0; s < samples; s++) dense.push(catmullRomPoint(p0, p1, p2, p3, s / samples));
+  }
+  dense.push({ ...anchors[anchors.length - 1] });
+  const out = [{ ...dense[0] }];
+  for (let i = 1; i < dense.length; i++) {
+    const a = out[out.length - 1], b = dense[i];
+    const segLen = distance(a.x, a.y, b.x, b.y);
+    if (segLen < 0.5) continue;
+    const steps = Math.max(1, Math.ceil(segLen / step));
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return out;
+}
+function nearestBuildPad(x, y) {
+  let best = null, bestD = BUILD_PAD_SNAP;
+  for (const p of buildPads) {
+    const d = distance(x, y, p.x, p.y);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+function canPlaceTower(c, r) {
+  if (pathBlocked.has(cellKey(c, r))) return false;
+  if (!buildPads.length) return !towerAt(c, r);
+  const pad = nearestBuildPad(c * TILE + TILE / 2, r * TILE + TILE / 2);
+  if (!pad) return false;
+  return !game.towers.some((t) => distance(t.x, t.y, pad.x, pad.y) < 22);
+}
 function cellKey(c, r) { return c + "," + r; }
 function distance(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
 function towerAt(c, r) { return game.towers.find((t) => t.c === c && t.r === r) || null; }
@@ -565,11 +718,19 @@ canvas.addEventListener("click", () => {
   }
   // 待部署武将 → 放到空地（招贤时已付招募费，这里不再扣费）
   if (!game.selectedHero) { game.selectedSlot = null; updateSelInfo(); return; }
-  if (existing || pathBlocked.has(cellKey(c, r))) return;
+  if (existing || !canPlaceTower(c, r)) {
+    if (game.selectedHero && buildPads.length && !nearestBuildPad(c * TILE + TILE / 2, r * TILE + TILE / 2)) {
+      flash("请点在箭塔平台上");
+    }
+    return;
+  }
+  const pad = nearestBuildPad(c * TILE + TILE / 2, r * TILE + TILE / 2);
+  const px = pad ? pad.x : c * TILE + TILE / 2;
+  const py = pad ? pad.y : r * TILE + TILE / 2;
   const hero = HEROES[game.selectedHero];
   game.towers.push({
     hero: game.selectedHero, arch: hero.arch, c, r,
-    x: c * TILE + TILE / 2, y: r * TILE + TILE / 2,
+    x: px, y: py,
     level: 1, cooldown: 0, angle: 0, bondMult: 1, rateBondMult: 1, attackAnim: 1, phase: Math.random() * 6.28,
     invested: game.pendingCost || RARITY[hero.rarity].deployCost,
   });
@@ -658,13 +819,14 @@ function renderCandidates() {
     const afford = game.gold >= cost;
     const card = document.createElement("div");
     card.className = "cand-card" + (afford ? "" : " cant");
+    card.dataset.state = afford ? (existing ? "upgrade" : "deploy") : "short";
     card.dataset.cost = cost;  // R18：供 updateCandidateAfford 实时判定
     card.innerHTML =
       `${heroPortraitImg(id, "cand-portrait")}` +
       `<div class="cand-top"><span class="cand-name">${hero.name}</span>` +
       `<span class="tw-fac">${archName}</span><span class="cand-star">${RARITY[hero.rarity].star}</span></div>` +
       `<div class="cand-trait">${hero.trait || ""}${existing ? `（当前 Lv.${existing.level}）` : ""}</div>` +
-      `<div class="cand-cost ${existing ? "up" : ""}">军粮 ${costLabel}</div>`;
+      `<div class="cand-cost ${existing ? "up" : ""}">${afford ? "军粮 " + costLabel : "军粮不足 · 需 " + cost}</div>`;
     // R18：始终绑定点击（selectCandidate 自带军粮校验），军粮回升后即可选
     card.addEventListener("click", () => selectCandidate(id));
     el.candidates.appendChild(card);
@@ -675,7 +837,14 @@ function updateCandidateAfford() {
   if (!el.candidates) return;
   el.candidates.querySelectorAll(".cand-card").forEach((card) => {
     const cost = +card.dataset.cost || 0;
-    card.classList.toggle("cant", game.gold < cost);
+    const short = game.gold < cost;
+    card.classList.toggle("cant", short);
+    card.dataset.state = short ? "short" : (card.querySelector(".cand-cost.up") ? "upgrade" : "deploy");
+    const costEl = card.querySelector(".cand-cost");
+    if (costEl) {
+      const up = costEl.classList.contains("up");
+      costEl.textContent = short ? "军粮不足 · 需 " + cost : "军粮 " + (up ? "升级 " : "招募 ") + cost;
+    }
   });
 }
 
@@ -789,10 +958,22 @@ function renderHomeOverview() {
   const cleared = game.maxUnlocked >= LEVELS.length - 1;
   const unlockedCount = unlockedIds().length;
   const totalHeroes = Object.keys(HEROES).length;
+  const progressPct = Math.round(((cur + 1) / LEVELS.length) * 100);
+  const featured = LEVELS[cur] && LEVELS[cur].featured && HEROES[LEVELS[cur].featured] ? HEROES[LEVELS[cur].featured].name : "主力武将";
+  const threats = LEVELS[cur] && Array.isArray(LEVELS[cur].threats) ? LEVELS[cur].threats.slice(0, 1) : [];
   node.innerHTML =
-    `<div class="ov-chip"><span class="ov-k">战役进度</span><span class="ov-v">${ch ? ch.name : "—"}　第 ${cur + 1}/${LEVELS.length} 关</span></div>` +
-    `<div class="ov-chip"><span class="ov-k">武将解锁</span><span class="ov-v">${unlockedCount}/${totalHeroes}</span></div>` +
-    `<button id="homeContinue" class="btn ov-continue">${cleared ? "重战" : "继续"}：${lvName} →</button>`;
+    `<div class="home-report">` +
+      `<div class="hr-head"><span>战役档案</span><b>${ch ? ch.name : "未分章"}</b></div>` +
+      `<div class="hr-current"><span>${cleared ? "当前可重战" : "当前战场"}</span><strong>${lvName}</strong></div>` +
+      `<progress class="hr-progress" value="${progressPct}" max="100" aria-label="战役进度"></progress>` +
+      `<div class="home-metrics">` +
+        `<div><span>关卡</span><b>${cur + 1}/${LEVELS.length}</b></div>` +
+        `<div><span>武将</span><b>${unlockedCount}/${totalHeroes}</b></div>` +
+        `<div><span>掉落提升</span><b>${featured}</b></div>` +
+      `</div>` +
+      `<div class="hr-intel">${threats.length ? threats[0] : "整备阵容，准备下一场战役。"}</div>` +
+      `<button id="homeContinue" class="btn home-btn-main ov-continue">${cleared ? "重战" : "继续"}：${lvName} →</button>` +
+    `</div>`;
   const cont = document.getElementById("homeContinue");
   if (cont) cont.addEventListener("click", () => enterLevel(cur));
 }
@@ -813,11 +994,20 @@ function appendLevelBtn(i) {
   const cleared = i < game.maxUnlocked;
   const bossId = levelBossId(i);
   const btn = document.createElement("button");
-  btn.className = "level-btn" + (locked ? " locked" : "") + (cleared ? " cleared" : "") + (bossId ? " boss" : "");
+  btn.className = "level-btn campaign-card" + (locked ? " locked" : "") + (cleared ? " cleared" : "") + (bossId ? " boss" : "");
   const tag = locked ? "未解锁" : cleared ? "已通关" : "可挑战";
   const bossName = bossId && BOSSES[bossId] ? BOSSES[bossId].name : "";
-  const bossMark = bossId ? `<span class="lv-boss">⚔ ${bossName}</span>` : "";
-  btn.innerHTML = `<span class="lv-name">${i + 1}. ${lv.name}${bossMark}</span><span class="lv-tag">${tag}</span>`;
+  const tags = Array.isArray(lv.tags) ? lv.tags.slice(0, 3) : [];
+  const threats = Array.isArray(lv.threats) ? lv.threats : [];
+  const recommends = Array.isArray(lv.recommends) ? lv.recommends : [];
+  const featured = lv.featured && HEROES[lv.featured] ? HEROES[lv.featured].name : "常规";
+  const bossMark = bossId ? `<span class="lv-boss">名将 ${bossName}</span>` : `<span class="lv-boss muted">常规敌军</span>`;
+  btn.innerHTML =
+    `<span class="camp-top"><span class="camp-no">第 ${i + 1} 战</span><span class="lv-tag">${tag}</span></span>` +
+    `<span class="lv-name">${lv.name}</span>` +
+    `<span class="camp-tags">${bossMark}${tags.map((t) => `<em>${t}</em>`).join("")}</span>` +
+    `<span class="camp-intel"><span><b>威胁</b>${threats[0] || "常规混编部队"}</span><span><b>应对</b>${recommends[0] || "均衡布阵"}</span></span>` +
+    `<span class="camp-drop">掉落提升：${featured}</span>`;
   if (!locked) btn.addEventListener("click", () => enterLevel(i));
   el.menuList.appendChild(btn);
 }
@@ -829,8 +1019,9 @@ function renderMenuList() {
     CHAPTERS.forEach((ch) => {
       const head = document.createElement("div");
       const chLocked = ch.from > game.maxUnlocked;
-      head.className = "chapter-head" + (chLocked ? " locked" : "");
-      head.textContent = ch.name;
+      head.className = "chapter-head campaign-chapter" + (chLocked ? " locked" : "");
+      const end = Math.min(ch.to + 1, LEVELS.length);
+      head.innerHTML = `<span>${ch.name}</span><b>${ch.from + 1}-${end}</b>`;
       el.menuList.appendChild(head);
       for (let i = ch.from; i <= ch.to && i < LEVELS.length; i++) { appendLevelBtn(i); grouped.add(i); }
     });
@@ -853,10 +1044,25 @@ function showDeckSelect(i) {
   const lv = LEVELS[i];
   el.deckTitle.textContent = (i + 1) + ". " + lv.name + " · 选将出战";
   const fid = lv.featured;
-  el.deckIntro.textContent = lv.intro + (fid && HEROES[fid] ? `（本关「${HEROES[fid].name}」碎片掉落提升）` : "");
+  el.deckIntro.textContent = lv.intro || "整备军册，准备出征。";
+  renderDeckMetrics(i);
   renderLevelIntel(lv);
   renderDeckGrid();
   switchScene("deck");
+}
+function renderDeckMetrics(i) {
+  if (!el.deckMetrics) return;
+  const lv = LEVELS[i] || {};
+  const fid = lv.featured;
+  const featured = fid && HEROES[fid] ? HEROES[fid].name : "常规";
+  const threats = Array.isArray(lv.threats) ? lv.threats : [];
+  const n = deckDraft.length;
+  const state = n < 1 ? "待编成" : n >= DECK_SIZE ? "满编" : "可出征";
+  el.deckMetrics.innerHTML =
+    `<div><span>阵容</span><b>${n}/${DECK_SIZE}</b></div>` +
+    `<div><span>状态</span><b>${state}</b></div>` +
+    `<div><span>掉落提升</span><b>${featured}</b></div>` +
+    `<div><span>敌情</span><b>${threats[0] || "常规混编"}</b></div>`;
 }
 function renderLevelIntel(lv) {
   if (!el.deckIntel) return;
@@ -873,6 +1079,8 @@ function renderLevelIntel(lv) {
     `</div>`;
 }
 function renderDeckGrid() {
+  renderDeckMetrics(game.pendingLevel || 0);
+  renderDeckSlots();
   el.deckGrid.innerHTML = unlockedIds().map((id) => {
     const h = HEROES[id];
     const on = deckDraft.includes(id);
@@ -904,6 +1112,26 @@ function renderDeckGrid() {
   el.deckCount.classList.toggle("full", n === DECK_SIZE);
   el.deckStart.disabled = n < 1 || n > DECK_SIZE;
 }
+function renderDeckSlots() {
+  if (!el.deckSlots) return;
+  const slots = [];
+  for (let i = 0; i < DECK_SIZE; i++) {
+    const id = deckDraft[i];
+    if (id && HEROES[id]) {
+      slots.push(`<button class="deck-slot filled ${deckDetailHero === id ? "focus" : ""}" type="button" data-slot="${id}">` +
+        heroPortraitImg(id, "slot-portrait") +
+        `<span>${HEROES[id].name}</span>` +
+      `</button>`);
+    } else {
+      slots.push(`<span class="deck-slot empty"><i>${i + 1}</i><span>空位</span></span>`);
+    }
+  }
+  el.deckSlots.innerHTML = `<div class="deck-slots-head"><span>出战阵容</span><b>${deckDraft.length}/${DECK_SIZE}</b></div>` +
+    `<div class="deck-slot-list">${slots.join("")}</div>`;
+  el.deckSlots.querySelectorAll("[data-slot]").forEach((btn) => {
+    btn.addEventListener("click", () => showDeckHeroDetail(btn.dataset.slot));
+  });
+}
 function showDeckHeroDetail(id) {
   deckDetailHero = id;
   renderDeckGrid();
@@ -912,9 +1140,11 @@ function renderDeckDetail() {
   if (!el.deckDetail) return;
   if (!deckDetailHero) {
     el.deckDetail.innerHTML = `<div class="deck-empty">暂无可选武将</div>`;
+    if (el.deckDetailState) el.deckDetailState.textContent = "待命";
     return;
   }
   const on = deckDraft.includes(deckDetailHero);
+  if (el.deckDetailState) el.deckDetailState.textContent = on ? "已入阵" : "待入阵";
   el.deckDetail.innerHTML = buildHeroDetailHtml(deckDetailHero) +
     `<button class="btn deck-detail-toggle" data-deck-detail-toggle="${deckDetailHero}">${on ? "移出阵容" : "加入阵容"}</button>`;
   bindHeroDetailActions(el.deckDetail, deckDetailHero, (hid) => {
@@ -1014,6 +1244,11 @@ function startNextWave() {
   }
   game.spawnQueue = queue;
   game.spawnTimer = 0;
+  showBattleNotice({
+    tone: groups.some((g) => g.boss) ? "boss" : "wave",
+    title: "第 " + (game.waveIndex + 1) + " 波来袭",
+    text: groups.some((g) => g.boss) ? "敌军名将即将现身，稳住阵线。" : "敌军压境，按军令布防迎战。",
+  });
   updateHUD();
 }
 
@@ -1060,6 +1295,7 @@ function spawnBoss(id) {
   for (const ab of def.abilities) if (ab.type === "resist") en.controlResist = ab.control;
   game.enemies.push(en);
   flash("⚔ 名将「" + def.name + "」现身！");
+  showBattleNotice({ tone: "boss", title: "名将现身", text: def.name + (def.title ? " · " + def.title : "") });
   Sfx.play("wave_start");
 }
 
@@ -1202,7 +1438,7 @@ function update(dt) {
       if (en._enraged) factor *= en.enrageSpeed || 1;
     }
     const step = stunned ? 0 : en.speed * factor * dt;
-    en.walk += step * 0.08;
+    en.walk += step * (en.boss ? 0.035 : 0.07);
     if (en.hitFlash > 0) en.hitFlash -= dt;
     if (step > 0 && d <= step) { en.x = target.x; en.y = target.y; en.seg += 1; }
     else if (step > 0) { en.x += (dx / d) * step; en.y += (dy / d) * step; }
@@ -1268,16 +1504,19 @@ function update(dt) {
 
   for (const f of game.floaters) { f.y -= 30 * dt; f.life -= dt; }
   for (const b of game.blasts) b.life -= dt;
+  if (game.battleNotice) game.battleNotice.life -= dt;
   Art.updateParticles(dt);
 
   game.enemies = game.enemies.filter((e) => e.hp > 0 && !e.reached);
   game.projectiles = game.projectiles.filter((p) => !p.dead);
   game.floaters = game.floaters.filter((f) => f.life > 0);
   game.blasts = game.blasts.filter((b) => b.life > 0);
+  if (game.battleNotice && game.battleNotice.life <= 0) game.battleNotice = null;
 
-  if (!game.betweenWaves && game.spawnQueue.length === 0 && game.enemies.length === 0) {
+    if (!game.betweenWaves && game.spawnQueue.length === 0 && game.enemies.length === 0) {
     game.betweenWaves = true;
     if (game.waveIndex >= waves.length - 1) return win();
+    showBattleNotice({ tone: "clear", title: "第 " + (game.waveIndex + 1) + " 波已挡下", text: "整顿兵马，准备下一波。" });
     flash("第 " + (game.waveIndex + 1) + " 波已挡下，整顿兵马");
   }
 
@@ -1384,6 +1623,7 @@ function onEnemyKilled(en, tw) {
   if (en.boss) {
     game._bossBonus = (game._bossBonus || 0) + (en.shardBonus || 0);
     Sfx.play("win");
+    showBattleNotice({ tone: "win", title: "名将授首", text: en.name + " 已被击退，士气大振。" });
     game.floaters.push({ x: en.x, y: en.y - 18, text: "名将「" + en.name + "」授首！", life: 1.5, color: "#ffd24a" });
     Art.emitParticles(en.x, en.y, { count: 40, color: "#ffd24a", speed: 170, life: 0.8, size: 5, gravity: 30 });
     game.blasts.push({ x: en.x, y: en.y, r0: 8, r1: en.radius * 4, life: 0.6, max: 0.6, color: "rgba(255,210,74,0.4)" });
@@ -1419,6 +1659,7 @@ function reachCastle(en) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBattlefield();
+  drawBuildPads();
   drawTowers();
   drawEnemies();
   drawProjectiles();
@@ -1428,6 +1669,7 @@ function draw() {
   drawHover();
   drawTargeting();
   drawBossBar();
+  drawBattleNotice();
   if (game.paused && game.running) {
     ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#f0e6d2"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
@@ -1455,19 +1697,82 @@ function drawBlasts() {
 function drawBossBar() {
   const b = game.enemies.find((e) => e.boss && e.hp > 0);
   if (!b) return;
-  const w = 440, h = 18, x = (canvas.width - w) / 2, y = 16;
+  const w = 500, h = 46, x = (canvas.width - w) / 2, y = 14;
   const pct = Math.max(0, b.hp / b.maxHp);
-  ctx.fillStyle = "rgba(20,12,8,0.72)"; ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
-  ctx.fillStyle = "#3a2018"; ctx.fillRect(x, y, w, h);
+  const tags = bossStatusTags(b);
+  ctx.save();
+  ctx.fillStyle = "rgba(20,12,8,0.78)";
+  roundRect(ctx, x, y, w, h, 8); ctx.fill();
+  ctx.strokeStyle = "rgba(202,168,74,0.58)"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = "#ffe6a0"; ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("名将 " + b.name + (b.title ? " · " + b.title : ""), x + 14, y + 14);
+  ctx.textAlign = "right"; ctx.font = "bold 12px sans-serif";
+  ctx.fillStyle = "#f0d8b0";
+  ctx.fillText(Math.ceil(b.hp) + "/" + Math.round(b.maxHp), x + w - 14, y + 14);
+  const bx = x + 14, by = y + 27, bw = w - 28, bh = 10;
+  ctx.fillStyle = "#3a2018"; roundRect(ctx, bx, by, bw, bh, 5); ctx.fill();
   ctx.fillStyle = pct > 0.5 ? "#d4503a" : pct > 0.25 ? "#d87a2a" : "#a02828";
-  ctx.fillRect(x, y, w * pct, h);
-  ctx.strokeStyle = "#caa84a"; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h);
-  ctx.fillStyle = "#ffe6a0"; ctx.font = "bold 13px sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("⚔ " + b.name + (b.title ? " · " + b.title : "") + "　" + Math.ceil(b.hp) + "/" + b.maxHp,
-    canvas.width / 2, y + h / 2);
-  if (b._enraged) { ctx.fillStyle = "#ff6a6a"; ctx.fillText("狂暴", x + w + 28, y + h / 2); }
-  ctx.textBaseline = "alphabetic";
+  roundRect(ctx, bx, by, bw * pct, bh, 5); ctx.fill();
+  ctx.strokeStyle = "rgba(255,230,160,0.42)"; ctx.stroke();
+  let tx = bx;
+  ctx.font = "bold 10px sans-serif";
+  for (const tag of tags) {
+    const tw = ctx.measureText(tag.label).width + 14;
+    ctx.fillStyle = tag.color;
+    roundRect(ctx, tx, y + h + 5, tw, 18, 9); ctx.fill();
+    ctx.fillStyle = "#1b1410"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(tag.label, tx + tw / 2, y + h + 14);
+    tx += tw + 6;
+  }
+  ctx.restore();
+}
+function bossStatusTags(b) {
+  const tags = [];
+  if (game.time < (b.chargeUntil || 0)) tags.push({ label: "冲锋", color: "#ffd24a" });
+  if (b._enraged) tags.push({ label: "狂暴", color: "#ff7a6a" });
+  if (b.dmgReduction) tags.push({ label: "减伤", color: "#d8a850" });
+  if (b.controlResist < 1) tags.push({ label: "抗控", color: "#a08ad8" });
+  if ((b.abilities || []).some((ab) => ab.type === "regen")) tags.push({ label: "自愈", color: "#6fae4a" });
+  return tags.slice(0, 5);
+}
+function showBattleNotice(cfg) {
+  game.battleNotice = {
+    title: cfg.title,
+    text: cfg.text || "",
+    tone: cfg.tone || "wave",
+    life: cfg.life || 2.35,
+    max: cfg.life || 2.35,
+  };
+}
+function drawBattleNotice() {
+  const n = game.battleNotice;
+  if (!n || n.life <= 0) return;
+  const fade = Math.min(1, n.life / 0.35, (n.max - n.life) / 0.25);
+  const w = Math.min(520, canvas.width - 160);
+  const h = 62;
+  const x = (canvas.width - w) / 2;
+  const y = game.enemies.some((e) => e.boss && e.hp > 0) ? 86 : 28;
+  const tones = {
+    boss: ["rgba(80,30,24,0.90)", "#ffcf75"],
+    win: ["rgba(45,68,32,0.90)", "#d8f0a0"],
+    clear: ["rgba(34,48,36,0.90)", "#d8b25c"],
+    wave: ["rgba(32,23,17,0.90)", "#7ec8ff"],
+  };
+  const tone = tones[n.tone] || tones.wave;
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.translate(0, (1 - fade) * -8);
+  ctx.fillStyle = tone[0];
+  roundRect(ctx, x, y, w, h, 9); ctx.fill();
+  ctx.strokeStyle = "rgba(241,199,99,0.46)"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = tone[1];
+  ctx.font = "bold 17px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(n.title, canvas.width / 2, y + 23);
+  ctx.fillStyle = "#f0dfb8";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(n.text, canvas.width / 2, y + 44);
+  ctx.restore();
 }
 
 function drawTargeting() {
@@ -1478,6 +1783,16 @@ function drawTargeting() {
   ctx.fillStyle = "rgba(255,138,58,0.15)"; ctx.fill();
 }
 function drawBattlefield() {
+  const hulaoBg = Art.getUiImage && Art.getUiImage("battlefield:hulao");
+  if (hulaoBg) {
+    ctx.drawImage(hulaoBg, 0, 0, canvas.width, canvas.height);
+    drawRouteGuide();
+    return;
+  }
+  if (game.levelIndex === 0) {
+    drawHulaoFallbackField();
+    return;
+  }
   const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
   g.addColorStop(0, "#35532b");
   g.addColorStop(0.58, "#294520");
@@ -1518,6 +1833,116 @@ function drawBattlefield() {
   }
   drawPath();
   drawCastle();
+}
+function drawHulaoFallbackField() {
+  const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  g.addColorStop(0, "#557036");
+  g.addColorStop(0.58, "#6f7b32");
+  g.addColorStop(1, "#2e4a2a");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(42,58,34,0.30)";
+  ctx.beginPath();
+  ctx.moveTo(0, 64);
+  ctx.bezierCurveTo(210, 10, 310, 100, 480, 48);
+  ctx.bezierCurveTo(650, 8, 760, 86, canvas.width, 42);
+  ctx.lineTo(canvas.width, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(178,132,73,0.24)";
+  ctx.lineWidth = TILE * 0.72;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(222,181,104,0.13)";
+  ctx.lineWidth = TILE * 0.42;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  drawRouteGuide();
+  ctx.restore();
+}
+function drawRouteGuide() {
+  if (!path.length) return;
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  drawGroundedRouteDust();
+  drawRouteEdgeScuffs();
+
+  // UIUE 底图已有自然土路，不再叠脚印圆点（易与造塔平台混淆）
+  if (!(Art.getUiImage && Art.getUiImage("battlefield:hulao"))) drawRouteMarkers();
+  ctx.restore();
+}
+function drawGroundedRouteDust() {
+  ctx.save();
+  ctx.setLineDash([18, 28]);
+  ctx.lineDashOffset = -game.time * 7;
+  ctx.strokeStyle = "rgba(86,61,38,0.075)";
+  ctx.lineWidth = TILE * 0.11;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.setLineDash([8, 38]);
+  ctx.lineDashOffset = -game.time * 11;
+  ctx.strokeStyle = "rgba(229,190,118,0.045)";
+  ctx.lineWidth = TILE * 0.05;
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawRouteEdgeScuffs() {
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len = Math.hypot(vx, vy);
+    if (!len) continue;
+    const nx = -vy / len, ny = vx / len;
+    for (let d = 32; d < len; d += 96) {
+      const t = d / len;
+      const side = ((i + Math.floor(d / 96)) % 2) ? 1 : -1;
+      const x = a.x + vx * t + nx * side * (18 + (i % 3) * 3);
+      const y = a.y + vy * t + ny * side * (18 + (i % 2) * 4);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.atan2(vy, vx) + side * 0.28);
+      ctx.fillStyle = "rgba(49,36,24,0.055)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 13, 3.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+function drawRouteMarkers() {
+  let carry = 0, count = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len = Math.hypot(vx, vy);
+    if (!len) continue;
+    const nx = -vy / len, ny = vx / len;
+    for (let d = 28 - carry; d < len; d += 72) {
+      const t = d / len;
+      const side = count % 2 ? 1 : -1;
+      const x = a.x + vx * t + nx * side * 9;
+      const y = a.y + vy * t + ny * side * 9;
+      const ang = Math.atan2(vy, vx) + side * 0.15;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.fillStyle = "rgba(66,46,29,0.105)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 4.2, 2.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      count++;
+    }
+    carry = (carry + len) % 72;
+  }
 }
 function isNearPath(x, y, radius) {
   for (let i = 1; i < path.length; i++) {
@@ -1642,16 +2067,31 @@ function roundRect(ctx, x, y, w, h, r) {
 function drawEnemies() {
   for (const en of game.enemies) {
     const size = en.radius * 2.4;
+    const a = path[Math.max(0, Math.min(en.seg || 0, path.length - 1))] || en;
+    const b = path[Math.max(0, Math.min((en.seg || 0) + 1, path.length - 1))] || { x: en.x + 1, y: en.y };
+    const dirLen = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dirX = (b.x - a.x) / dirLen, dirY = (b.y - a.y) / dirLen;
+    const phase = en.walk || 0;
+    const bob = Math.sin(phase * Math.PI * 2) * Math.min(2.4, en.radius * 0.14);
+    const contact = (1 + Math.cos(phase * Math.PI * 4)) * 0.5;
+    const sheetFoot = en.boss ? en.y + en.radius * 0.18 : en.y + en.radius * 0.50;
+    const drawY = sheetFoot - size * 0.46 + bob;
+    const shadowPulse = 0.88 + contact * 0.18;
+    const flipX = dirX < -0.06;
     // 阴影
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.beginPath(); ctx.ellipse(en.x, en.y + en.radius * 0.7, en.radius * 0.8, en.radius * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath(); ctx.ellipse(en.x, sheetFoot + 2, en.radius * (0.82 + contact * 0.16), en.radius * (0.20 + contact * 0.07), 0, 0, Math.PI * 2); ctx.fill();
+    if (!en.boss && contact > 0.82) drawFootDust(en.x - dirX * en.radius * 0.2, sheetFoot + 2, dirX, dirY, contact);
     if (en.boss) {
       ctx.strokeStyle = "rgba(255,210,74,0.55)"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(en.x, en.y + en.radius * 0.7, en.radius * 1.1, en.radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(en.x, sheetFoot + 1, en.radius * 1.1, en.radius * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
     }
-    Art.drawSprite(ctx, en.spriteKey || ("enemy:" + en.type), en.x, en.y, {
-      size, walk: en.walk, flashAlpha: en.hitFlash > 0 ? en.hitFlash / 0.12 * 0.7 : 0,
+    ctx.save();
+    ctx.translate(en.x, drawY);
+    Art.drawSprite(ctx, en.spriteKey || ("enemy:" + en.type), 0, 0, {
+      size, walk: en.walk, flipX, scale: 1 + contact * 0.01, flashAlpha: en.hitFlash > 0 ? en.hitFlash / 0.12 * 0.7 : 0,
     });
+    ctx.restore();
     if (en.boss) {
       ctx.fillStyle = "#ffd24a"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
       ctx.fillText(en.name, en.x, en.y - en.radius - 18);
@@ -1674,6 +2114,18 @@ function drawEnemies() {
       ctx.beginPath(); ctx.ellipse(en.x, en.y + en.radius * 0.7, en.radius * 0.9, en.radius * 0.35, 0, 0, Math.PI * 2); ctx.stroke();
     }
   }
+}
+function drawFootDust(x, y, dirX, dirY, contact) {
+  ctx.save();
+  ctx.translate(x - dirX * 3, y - dirY * 2);
+  ctx.rotate(Math.atan2(dirY, dirX));
+  ctx.fillStyle = "rgba(199,160,92," + (0.05 + contact * 0.06).toFixed(3) + ")";
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(-i * 5, (i - 1) * 2.1, 4.5 - i * 0.8, 1.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 function drawProjectiles() {
   for (const p of game.projectiles) {
@@ -1700,17 +2152,84 @@ function drawFloaters() {
   ctx.globalAlpha = 1;
 }
 function drawHover() {
-  if (!game.mouse.cell || !game.selectedHero) return;
+  if (!game.mouse.cell) return;
   const { c, r } = game.mouse.cell;
   if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
-  const blocked = pathBlocked.has(cellKey(c, r)) || towerAt(c, r);
+  if (!game.selectedHero) return;
+  const blocked = !canPlaceTower(c, r);
+  const pad = nearestBuildPad(c * TILE + TILE / 2, r * TILE + TILE / 2);
+  const x = pad ? pad.x : c * TILE + TILE / 2;
+  const y = pad ? pad.y : r * TILE + TILE / 2;
   const a = ARCHETYPES[HEROES[game.selectedHero].arch];
-  const x = c * TILE + TILE / 2, y = r * TILE + TILE / 2;
-  ctx.fillStyle = blocked ? "rgba(212,80,58,0.3)" : "rgba(111,174,74,0.3)";
-  ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+  if (pad) {
+    const pulse = 0.55 + Math.sin(game.time * 5) * 0.25;
+    ctx.fillStyle = blocked ? "rgba(212,80,58,0.22)" : `rgba(111,174,74,${0.14 + pulse * 0.12})`;
+    ctx.beginPath(); ctx.ellipse(pad.x, pad.y + 8, 28, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = blocked ? "rgba(212,80,58,0.65)" : `rgba(200,160,74,${0.55 + pulse * 0.35})`;
+    ctx.lineWidth = blocked ? 2 : 2.5;
+    ctx.stroke();
+  } else if (buildPads.length) {
+    ctx.fillStyle = "rgba(212,80,58,0.22)";
+    ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+  } else {
+    ctx.fillStyle = blocked ? "rgba(212,80,58,0.3)" : "rgba(111,174,74,0.3)";
+    ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
+  }
   if (!blocked) {
     ctx.fillStyle = "rgba(200,160,74,0.12)";
     ctx.beginPath(); ctx.arc(x, y, a.range, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function drawBuildPads() {
+  if (!buildPads.length) return;
+  const deploy = !!game.selectedHero;
+  const pulse = 0.5 + Math.sin(game.time * 3.2) * 0.5;
+  for (let i = 0; i < buildPads.length; i++) {
+    const p = buildPads[i];
+    const taken = game.towers.some((t) => distance(t.x, t.y, p.x, p.y) < 20);
+    if (taken) continue;
+    ctx.save();
+    ctx.translate(p.x, p.y + 6);
+    // 土堆基座（常驻可见）
+    ctx.fillStyle = "rgba(18,12,8,0.28)";
+    ctx.beginPath(); ctx.ellipse(2, 10, 30, 11, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(92,68,42,0.88)";
+    ctx.beginPath(); ctx.ellipse(0, 8, 28, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(128,96,58,0.92)";
+    ctx.beginPath(); ctx.ellipse(0, 4, 23, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(168,132,82,0.95)";
+    ctx.beginPath(); ctx.ellipse(0, 1, 17, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // 木桩围栏
+    ctx.strokeStyle = "rgba(74,52,30,0.9)";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(-20, 6); ctx.lineTo(-20, -2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(20, 6); ctx.lineTo(20, -2); ctx.stroke();
+    ctx.strokeStyle = "rgba(96,70,40,0.75)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(20, 0); ctx.stroke();
+    // 牌位「塔」
+    ctx.fillStyle = deploy ? "rgba(241,199,99,0.98)" : "rgba(226,186,108,0.94)";
+    ctx.fillRect(-9, -16, 18, 14);
+    ctx.strokeStyle = deploy ? "rgba(120,88,40,0.95)" : "rgba(96,72,36,0.9)";
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(-9, -16, 18, 14);
+    ctx.fillStyle = deploy ? "#2a1a0c" : "#3a2814";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("塔", 0, -9);
+    ctx.fillStyle = "rgba(240,230,210,0.82)";
+    ctx.font = "bold 9px sans-serif";
+    ctx.fillText(String(i + 1), 0, 12);
+    if (deploy) {
+      const ringA = 0.42 + pulse * 0.35;
+      ctx.strokeStyle = `rgba(111,174,74,${ringA})`;
+      ctx.lineWidth = 2.6;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.ellipse(0, 5, 34, 13, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
   }
 }
 
@@ -1751,31 +2270,44 @@ function updateSkillUI() {
 function updateSelInfo() {
   if (game.selectedHero) {
     const hero = HEROES[game.selectedHero];
-    el.selInfo.innerHTML = `待部署：<b>${hero.name}</b><br>点击空地安置（Esc 取消退款）`;
+    el.selInfo.innerHTML =
+      `<div class="sel-card pending">` +
+        `<div class="sel-k">待部署</div>` +
+        `<div class="sel-name">${hero.name} <span>${RARITY[hero.rarity].star}</span></div>` +
+        `<div class="sel-sub">${ARCH_FULL_LABEL[hero.arch]} · ${hero.trait || ""}</div>` +
+        `<div class="sel-stats"><span>已付军粮<b>${game.pendingCost || deployCostOf(hero)}</b></span><span>兵种<b>${ARCH_LABEL[hero.arch]}</b></span></div>` +
+        `<div class="sel-action">${buildPads.length ? "点击箭塔平台安置" : "点击战场空地安置"} · Esc 取消并退款</div>` +
+      `</div>`;
     return;
   }
   const t = game.selectedSlot;
   if (t) {
     const hero = HEROES[t.hero]; const s = towerStats(t);
     const maxed = t.level >= (hero.maxLevel || 3);
-    const bondNote = t.bondMult > 1 ? `<br><span style="color:#6fae4a">羁绊 +${Math.round((t.bondMult - 1) * 100)}%</span>` : "";
-    const auraNote = t.auraMult > 1 ? `<br><span style="color:#7ec8ff">伤害光环 +${Math.round((t.auraMult - 1) * 100)}%</span>` : "";
     const rank = heroRank(t.hero);
-    const rankNote = `<br><span style="color:#c8a04a">升级 Lv.${rank}/${maxRank()}</span>`;
     const pas = hero.passive;
-    const pasNote = pas
-      ? `<br>被动「${pas.name}」：` + (passiveUnlocked(t.hero)
-          ? `<span style="color:#6fae4a">已激活</span>`
-          : `<span style="color:#9a8a72">升级 Lv.${pas.unlockRank} 解锁</span>`)
-      : "";
+    const perks = [
+      t.bondMult > 1 ? `羁绊 +${Math.round((t.bondMult - 1) * 100)}%` : "",
+      t.auraMult > 1 ? `伤害光环 +${Math.round((t.auraMult - 1) * 100)}%` : "",
+      pas ? `被动「${pas.name}」${passiveUnlocked(t.hero) ? "已激活" : "Lv." + pas.unlockRank + " 解锁"}` : "",
+    ].filter(Boolean);
     el.selInfo.innerHTML =
-      `<b>${hero.name}</b> ${RARITY[hero.rarity].star} Lv.${t.level}${maxed ? "（满级）" : ""}${bondNote}${auraNote}${rankNote}${pasNote}<br>` +
-      `伤害 ${s.damage}　射程 ${s.range}<br><br>` +
-      `${maxed ? "已满级，招贤再抽到将不再出现<br>" : "招贤再抽到此将可升级<br>"}` +
-      `按 <b>S</b> 撤将（全额返还军粮 ${sellRefund(t)}）`;
+      `<div class="sel-card active">` +
+        `<div class="sel-k">已选武将</div>` +
+        `<div class="sel-name">${hero.name} <span>${RARITY[hero.rarity].star} Lv.${t.level}${maxed ? " 满级" : ""}</span></div>` +
+        `<div class="sel-sub">永久升级 Lv.${rank}/${maxRank()} · ${ARCH_FULL_LABEL[hero.arch]}</div>` +
+        `<div class="sel-stats"><span>伤害<b>${s.damage}</b></span><span>射程<b>${s.range}</b></span><span>返还<b>${sellRefund(t)}</b></span></div>` +
+        (perks.length ? `<div class="sel-tags">${perks.map((x) => `<em>${x}</em>`).join("")}</div>` : "") +
+        `<div class="sel-action">${maxed ? "已满级，不再进入招贤池" : "再抽到此将可升级"} · 按 S 撤将</div>` +
+      `</div>`;
     return;
   }
-  el.selInfo.textContent = "点击「招贤」抽取武将，或点已有武将查看";
+  el.selInfo.innerHTML =
+    `<div class="sel-card empty">` +
+      `<div class="sel-k">军令提示</div>` +
+      `<div class="sel-name">等待部署</div>` +
+      `<div class="sel-sub">点击「招贤」抽取武将，或点场上武将查看状态</div>` +
+    `</div>`;
 }
 function flash(text) {
   el.speedHint.textContent = text;
@@ -1795,10 +2327,44 @@ function finishCutscene() {
   applyResultOverlay(cs.payload);
   game.cutscene = null;
 }
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function renderResultSummary(items) {
+  const arr = Array.isArray(items) ? items.filter((x) => x && x.label) : [];
+  if (!arr.length) return "";
+  return arr.map((it) =>
+    `<div class="result-stat"><span>${escapeHtml(it.label)}</span><b>${escapeHtml(it.value || "")}</b></div>`
+  ).join("");
+}
+function renderResultRewards(items) {
+  const arr = Array.isArray(items) ? items.filter((x) => x && x.label) : [];
+  if (!arr.length) return `<div class="reward-empty">本战无额外缴获</div>`;
+  return arr.map((it) =>
+    `<span class="reward-chip"><span>${escapeHtml(it.label)}</span><b>${escapeHtml(it.value || "")}</b></span>`
+  ).join("");
+}
 function applyResultOverlay(pl) {
   game.overlayMode = pl.mode;
+  const tone = pl.tone || (pl.mode === "retry" ? "lose" : pl.mode === "intro" ? "intro" : "win");
+  const card = document.getElementById("resultCard");
+  if (card) card.dataset.tone = tone;
+  if (el.ovBadge) el.ovBadge.textContent = pl.badge || "战报";
   el.ovTitle.textContent = pl.title;
   el.ovText.textContent = pl.text;
+  if (el.ovSummary) el.ovSummary.innerHTML = renderResultSummary(pl.summary);
+  if (el.ovRewards) {
+    el.ovRewards.innerHTML = renderResultRewards(pl.rewards);
+    el.ovRewards.classList.toggle("empty", !pl.rewards || !pl.rewards.length);
+  }
+  if (el.ovNext) {
+    el.ovNext.textContent = pl.next || "";
+    el.ovNext.classList.toggle("hidden", !pl.next);
+  }
   el.ovBtn.textContent = pl.btn;
   el.ovBtn.classList.remove("hidden");
   if (pl.showBtn2) el.ovBtn2.classList.remove("hidden"); else el.ovBtn2.classList.add("hidden");
@@ -1816,15 +2382,34 @@ function win() {
   const drops = rollShardDrops(idx);
   if (game._bossBonus && featured && HEROES[featured]) drops[featured] = (drops[featured] || 0) + game._bossBonus;
   addShards(drops);
-  const dn = Object.keys(drops);
-  const shardLine = dn.length
-    ? "　战利碎片：" + dn.map((id) => `${HEROES[id].name}×${drops[id]}`).join("、")
-    : "";
+  const rewards = Object.keys(drops).map((id) => ({ label: HEROES[id].name, value: "碎片 ×" + drops[id] }));
   let payload;
   if (game.levelIndex >= LEVELS.length - 1) {
-    payload = { mode: "win", title: "天下大势已定！", text: "三战皆捷，威震华夏。" + shardLine, btn: "返回主菜单", showBtn2: false };
+    payload = {
+      mode: "win", tone: "win", badge: "终局战报", title: "天下大势已定！",
+      text: "三战皆捷，威震华夏。",
+      summary: [
+        { label: "战场", value: LEVELS[game.levelIndex].name },
+        { label: "城防", value: game.hp + " 点" },
+        { label: "波次", value: waves.length + "/" + waves.length },
+      ],
+      rewards,
+      next: "已完成当前战役，可返回主菜单整备武将。",
+      btn: "返回主菜单", showBtn2: false,
+    };
   } else {
-    payload = { mode: "levelClear", title: "大捷！", text: LEVELS[game.levelIndex].name + " 已下。下一战：" + LEVELS[game.levelIndex + 1].name + shardLine, btn: "进军下一关", showBtn2: true };
+    payload = {
+      mode: "levelClear", tone: "win", badge: "捷报", title: "大捷！",
+      text: LEVELS[game.levelIndex].name + " 已下。",
+      summary: [
+        { label: "战场", value: LEVELS[game.levelIndex].name },
+        { label: "城防", value: game.hp + " 点" },
+        { label: "波次", value: waves.length + "/" + waves.length },
+      ],
+      rewards,
+      next: "下一战：" + LEVELS[game.levelIndex + 1].name,
+      btn: "进军下一关", showBtn2: true,
+    };
   }
   startCutscene("win", payload);
   updatePauseUI();
@@ -1832,7 +2417,18 @@ function win() {
 function lose() {
   game.over = true; game.running = false; game.paused = false;
   Sfx.stopMusic(); Sfx.play("lose");
-  startCutscene("lose", { mode: "retry", title: "关隘失守", text: "城池被攻破……整军再来，未为晚也。", btn: "重整旗鼓", showBtn2: true });
+  startCutscene("lose", {
+    mode: "retry", tone: "lose", badge: "败报", title: "关隘失守",
+    text: "城池被攻破，敌军已越过防线。",
+    summary: [
+      { label: "战场", value: LEVELS[game.levelIndex].name },
+      { label: "城防", value: "0 点" },
+      { label: "波次", value: Math.max(0, game.waveIndex + 1) + "/" + waves.length },
+    ],
+    rewards: [],
+    next: "重整阵容，优先补足路线后段火力与控制。",
+    btn: "重整旗鼓", showBtn2: true,
+  });
   updatePauseUI();
 }
 function startLevel(i) {
@@ -1846,7 +2442,7 @@ function startLevel(i) {
   game.waveIndex = -1; game.spawnQueue = []; game.betweenWaves = true;
   game.enemies = []; game.towers = []; game.projectiles = []; game.floaters = [];
   game.activeBonds = []; game._bondSig = null;
-  game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = [];
+  game.time = 0; game.skillReady = { fire: 0, fort: 0 }; game.targeting = null; game.blasts = []; game.battleNotice = null;
   game._bossBonus = 0;
   game.cutscene = null; // R21：清结算过场
   game.paused = false; game.speed = 1;

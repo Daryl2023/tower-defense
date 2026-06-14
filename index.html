@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>三国塔防 · 虎牢关之战</title>
-  <link rel="stylesheet" href="style.css?v=20260613-r27-aspect" />
+  <link rel="stylesheet" href="style.css?v=20260614-r59-pad5-up-left" />
 </head>
 <body>
   <div id="app">
@@ -13,16 +13,17 @@
     <section id="sceneHome" class="scene">
       <canvas id="homeCanvas" class="home-bg" width="1280" height="720"></canvas>
       <div class="home-ui">
-        <div class="home-top">
-          <h1 class="home-title">三国塔防</h1>
-          <p class="home-tagline">运筹帷幄之中，决胜千里之外</p>
-        </div>
-        <div class="home-bottom">
-          <div id="homeOverview" class="home-overview"></div>
-          <div class="home-actions">
-            <button id="homeStart" class="btn home-btn-main">开始游戏</button>
-            <button id="homeHeroes" class="btn btn-ghost">武将府</button>
+        <div class="home-command">
+          <div class="home-primary">
+            <span class="home-badge">蜀汉军议</span>
+            <h1 class="home-title">三国塔防</h1>
+            <p class="home-tagline">运筹帷幄之中，决胜千里之外</p>
+            <div class="home-actions">
+              <button id="homeStart" class="btn btn-ghost">战役地图</button>
+              <button id="homeHeroes" class="btn btn-ghost">武将府</button>
+            </div>
           </div>
+          <div id="homeOverview" class="home-overview"></div>
         </div>
       </div>
     </section>
@@ -43,12 +44,33 @@
     <!-- ===== 场景：选将出战（R19）===== -->
     <section id="sceneDeck" class="scene">
       <div class="scene-card deck-card">
-        <h2 id="deckTitle">选将出战</h2>
-        <p id="deckIntro" class="train-tip"></p>
-        <div id="deckIntel" class="level-intel"></div>
+        <div class="deck-command">
+          <div class="deck-command-main">
+            <span class="deck-badge">出征军册</span>
+            <h2 id="deckTitle">选将出战</h2>
+            <p id="deckIntro" class="train-tip"></p>
+          </div>
+          <div id="deckMetrics" class="deck-metrics"></div>
+        </div>
+        <div class="deck-brief">
+          <div id="deckIntel" class="level-intel"></div>
+          <div id="deckSlots" class="deck-slots"></div>
+        </div>
         <div class="deck-layout">
-          <div id="deckGrid" class="deck-grid"></div>
-          <aside id="deckDetail" class="deck-detail"></aside>
+          <div class="deck-roster">
+            <div class="deck-section-head">
+              <span>军册</span>
+              <b>点击卡片查看，点勾选入阵</b>
+            </div>
+            <div id="deckGrid" class="deck-grid"></div>
+          </div>
+          <aside class="deck-detail-wrap">
+            <div class="deck-section-head">
+              <span>将领档案</span>
+              <b id="deckDetailState">待命</b>
+            </div>
+            <div id="deckDetail" class="deck-detail"></div>
+          </aside>
         </div>
         <div class="deck-foot">
           <span id="deckCount" class="deck-count">已选 0/6</span>
@@ -63,23 +85,33 @@
     <!-- ===== 场景：战斗（R19）：HUD + 战场 + 招贤馆 ===== -->
     <section id="sceneBattle" class="scene">
       <header id="hud">
-        <span class="hud-title">虎牢关之战</span>
-        <span class="hud-item">军粮 <b id="gold">0</b></span>
-        <span class="hud-item">城池 <b id="hp">0</b></span>
-        <span class="hud-item">波次 <b id="wave">0</b>/<b id="waveTotal">0</b></span>
-        <button id="startBtn" class="btn">出战</button>
-        <span class="skillbar">
-          <button id="skillFire" class="skill-btn" data-skill="fire">
-            <span class="sk-name">火计</span><span class="sk-cd"></span>
-          </button>
-          <button id="skillFort" class="skill-btn" data-skill="fort">
-            <span class="sk-name">空城计</span><span class="sk-cd"></span>
-          </button>
-        </span>
-        <button id="pauseBtn" class="btn btn-sm">暂停</button>
-        <button id="speedBtn" class="btn btn-sm">1x</button>
-        <button id="muteBtn" class="btn btn-sm" title="音效开关">🔊</button>
-        <button id="menuBtn" class="btn btn-sm">菜单</button>
+        <div class="hud-left">
+          <span class="hud-title">虎牢关之战</span>
+          <div class="hud-resources">
+            <span class="hud-item" data-kind="gold"><span class="hud-icon" aria-hidden="true"></span><span class="hud-copy">军粮 <b id="gold">0</b></span></span>
+            <span class="hud-item" data-kind="hp"><span class="hud-icon" aria-hidden="true"></span><span class="hud-copy">城池 <b id="hp">0</b></span></span>
+            <span class="hud-item" data-kind="wave"><span class="hud-icon" aria-hidden="true"></span><span class="hud-copy">波次 <b id="wave">0</b>/<b id="waveTotal">0</b></span></span>
+          </div>
+        </div>
+        <div class="hud-actions">
+          <button id="startBtn" class="btn">出战</button>
+          <span class="skillbar">
+            <button id="skillFire" class="skill-btn" data-skill="fire">
+              <span class="sk-icon" aria-hidden="true"></span>
+              <span class="sk-name">火计</span><span class="sk-cd"></span>
+            </button>
+            <button id="skillFort" class="skill-btn" data-skill="fort">
+              <span class="sk-icon" aria-hidden="true"></span>
+              <span class="sk-name">空城计</span><span class="sk-cd"></span>
+            </button>
+          </span>
+        </div>
+        <div class="hud-controls">
+          <button id="pauseBtn" class="btn btn-sm">暂停</button>
+          <button id="speedBtn" class="btn btn-sm">1x</button>
+          <button id="muteBtn" class="btn btn-sm" title="音效开关">🔊</button>
+          <button id="menuBtn" class="btn btn-sm">菜单</button>
+        </div>
         <span id="speedHint" class="hud-hint"></span>
       </header>
 
@@ -87,7 +119,7 @@
         <canvas id="game" width="960" height="600"></canvas>
 
         <aside id="shop">
-          <h3>招贤馆 · 蜀</h3>
+          <h3>军令台 · 招贤</h3>
           <button id="recruitBtn" class="recruit-btn">
             <span class="rc-label">招贤</span>
             <span class="rc-cost" id="recruitCost">军粮 30</span>
@@ -105,9 +137,13 @@
 
       <!-- 战中结算弹窗：开战提示 / 通关 / 失败重试 -->
       <div id="overlay" class="overlay hidden">
-        <div class="overlay-card">
+        <div class="overlay-card" id="resultCard">
+          <div id="ovBadge" class="result-badge">军报</div>
           <h2 id="ovTitle">三国塔防</h2>
-          <p id="ovText">守住虎牢关，击退董卓大军！</p>
+          <p id="ovText" class="result-lead">守住虎牢关，击退董卓大军！</p>
+          <div id="ovSummary" class="result-summary"></div>
+          <div id="ovRewards" class="result-rewards"></div>
+          <div id="ovNext" class="result-next"></div>
           <div class="overlay-btns">
             <button id="ovBtn" class="btn">开始</button>
             <button id="ovBtn2" class="btn btn-ghost hidden">返回主菜单</button>
@@ -120,36 +156,55 @@
     <section id="sceneCodex" class="scene">
       <div class="scene-card codex-card">
         <div id="codexListView">
-          <h2>武将府</h2>
-          <p class="train-tip">点击任一武将查看属性、碎片、升级、被动与羁绊。</p>
-          <h3 class="codex-h">武将</h3>
-          <div class="codex-tools">
-            <label>排序
-              <select id="codexSort">
-                <option value="rarity">星级</option>
-                <option value="rank">等级</option>
-                <option value="owned">拥有</option>
-                <option value="arch">兵种</option>
-                <option value="name">姓名</option>
-              </select>
-            </label>
-            <label>筛选
-              <select id="codexFilter">
-                <option value="all">全部</option>
-                <option value="owned">已拥有</option>
-                <option value="locked">未拥有</option>
-                <option value="arch:spear">枪兵</option>
-                <option value="arch:archer">弓兵</option>
-                <option value="arch:strategist">谋士</option>
-              </select>
-            </label>
+          <div class="codex-command">
+            <div class="codex-command-main">
+              <span class="codex-badge">将府军籍</span>
+              <h2>武将府</h2>
+              <p class="train-tip">查看武将素材、碎片、升级、被动与羁绊。</p>
+            </div>
+            <div id="codexMetrics" class="codex-metrics"></div>
           </div>
-          <div id="codexHeroes" class="codex-list"></div>
-          <h3 class="codex-h">羁绊</h3>
-          <div id="codexBonds" class="codex-list"></div>
+          <div class="codex-toolbar">
+            <div class="codex-tools">
+              <label>排序
+                <select id="codexSort">
+                  <option value="rarity">星级</option>
+                  <option value="rank">等级</option>
+                  <option value="owned">拥有</option>
+                  <option value="arch">兵种</option>
+                  <option value="name">姓名</option>
+                </select>
+              </label>
+              <label>筛选
+                <select id="codexFilter">
+                  <option value="all">全部</option>
+                  <option value="owned">已拥有</option>
+                  <option value="locked">未拥有</option>
+                  <option value="arch:spear">枪兵</option>
+                  <option value="arch:archer">弓兵</option>
+                  <option value="arch:strategist">谋士</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="codex-archive">
+            <div class="codex-section-head"><span>武将军籍</span><b id="codexResultCount">0 名</b></div>
+            <div id="codexHeroes" class="codex-list"></div>
+          </div>
+          <div class="bond-dossier">
+            <div class="codex-section-head"><span>羁绊卷宗</span><b>上阵激活</b></div>
+            <div id="codexBonds" class="codex-list"></div>
+          </div>
           <button id="codexClose" class="btn">返回</button>
         </div>
         <div id="codexDetailView" class="hidden">
+          <div class="detail-command">
+            <div>
+              <span class="codex-badge">将领档案</span>
+              <h2>武将府</h2>
+            </div>
+            <button id="detailBackTop" class="btn btn-ghost">返回军籍</button>
+          </div>
           <div id="detailBody"></div>
           <button id="detailBack" class="btn">返回武将府</button>
         </div>
@@ -158,9 +213,9 @@
 
   </div>
 
-  <script src="data.js?v=20260613-r27-aspect"></script>
-  <script src="sprites.js?v=20260613-r27-aspect"></script>
-  <script src="audio.js?v=20260613-r27-aspect"></script>
-  <script src="game.js?v=20260613-r27-aspect"></script>
+  <script src="data.js?v=20260614-r59-pad5-up-left"></script>
+  <script src="sprites.js?v=20260614-r59-pad5-up-left"></script>
+  <script src="audio.js?v=20260614-r59-pad5-up-left"></script>
+  <script src="game.js?v=20260614-r59-pad5-up-left"></script>
 </body>
 </html>

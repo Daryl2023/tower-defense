@@ -50,13 +50,43 @@ const IMAGE_OVERRIDES = {
     icons: "assets/heroes/zhugeliang/icons.png", // 16:9（1376×768）
   },
   "hero:zhaoyun": {
-    img: "assets/heroes/zhaoyun/sheet.png",
-    cols: 4, rows: 2, frameW: 364, frameH: 360, // 整表 1456×720
-    frameInset: 0.1,
+    img: "assets/uiue/heroes/zhaoyun/sheet.png",
+    cols: 4, rows: 2, frameW: 344, frameH: 384, // P0 UIUE 整表 1376×768
+    frameInset: 0.015,
     stripBg: false,
-    portrait: "assets/heroes/zhaoyun/portrait.png",
+    portrait: "assets/uiue/heroes/zhaoyun/portrait.png",
     icons: "assets/heroes/zhaoyun/icons.png",
-    passiveIcon: "assets/heroes/zhaoyun/passive-icon.png",
+    passiveIcon: "assets/uiue/heroes/zhaoyun/passive-icon.png",
+  },
+  "enemy:infantry": {
+    img: "assets/uiue/enemies/infantry/sheet.png",
+    cols: 4, rows: 1, frameW: 516, frameH: 512,
+    frameInset: 0.03,
+    stripBg: false,
+  },
+  "enemy:cavalry": {
+    img: "assets/uiue/enemies/cavalry/sheet.png",
+    cols: 4, rows: 1, frameW: 516, frameH: 512,
+    frameInset: 0.03,
+    stripBg: false,
+  },
+  "enemy:shield": {
+    img: "assets/uiue/enemies/shield/sheet.png",
+    cols: 4, rows: 1, frameW: 516, frameH: 512,
+    frameInset: 0.03,
+    stripBg: false,
+  },
+  "enemy:healer": {
+    img: "assets/uiue/enemies/healer/sheet.png",
+    cols: 4, rows: 1, frameW: 516, frameH: 512,
+    frameInset: 0.03,
+    stripBg: false,
+  },
+  "enemy:siege": {
+    img: "assets/uiue/enemies/siege/sheet.png",
+    cols: 4, rows: 1, frameW: 516, frameH: 512,
+    frameInset: 0.03,
+    stripBg: false,
   },
 };
 (function applyImageOverrides() {
@@ -73,27 +103,46 @@ function loadImage(src, onOk, onErr) {
   im.src = src;
 }
 
+const UIUE_ASSETS = {
+  "battlefield:hulao": { img: "assets/uiue/battlefields/hulao_gate.png" },
+  "ui:panelAtlas": { img: "assets/uiue/ui/panel_atlas.png" },
+  "ui:resourceIcons": { img: "assets/uiue/ui/resource_icons.png" },
+  "skill:fire": { img: "assets/uiue/effects/fire_icon_256.png" },
+  "skill:fort": { img: "assets/uiue/effects/fort_icon_256.png" },
+};
+
+// file:// 或跨域图绘制到 canvas 后读像素会抛 SecurityError；此时回退原图。
+function canStripSpritePixels() {
+  if (typeof location !== "undefined" && location.protocol === "file:") return false;
+  return true;
+}
+
 // AI 生图常见假透明：棋盘格暗格~96、亮格~144 被画进像素；银甲/白袍通常 >=161
 // 去除低饱和中性灰格（保留有色彩的盔甲/皮肤/特效）
 function stripAICheckerboard(img, opts = {}) {
+  if (!canStripSpritePixels()) return img;
   const darkMin = opts.darkMin ?? 55;
   const darkMax = opts.darkMax ?? 158;
   const whiteMin = opts.whiteMin ?? (opts.portrait ? 250 : 238);
-  const c = document.createElement("canvas");
-  c.width = img.width;
-  c.height = img.height;
-  const ctx = c.getContext("2d");
-  ctx.drawImage(img, 0, 0);
-  const id = ctx.getImageData(0, 0, c.width, c.height);
-  const d = id.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i + 1], b = d[i + 2];
-    if (d[i + 3] === 0) continue;
-    if (Math.abs(r - g) > 24 || Math.abs(g - b) > 24 || Math.abs(r - b) > 24) continue;
-    if ((r >= darkMin && r <= darkMax) || r >= whiteMin) d[i + 3] = 0;
+  try {
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const id = ctx.getImageData(0, 0, c.width, c.height);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (d[i + 3] === 0) continue;
+      if (Math.abs(r - g) > 24 || Math.abs(g - b) > 24 || Math.abs(r - b) > 24) continue;
+      if ((r >= darkMin && r <= darkMax) || r >= whiteMin) d[i + 3] = 0;
+    }
+    ctx.putImageData(id, 0, 0);
+    return c;
+  } catch (e) {
+    return img;
   }
-  ctx.putImageData(id, 0, 0);
-  return c;
 }
 
 function finalizeSpriteImage(im, asset) {
@@ -175,12 +224,28 @@ function preloadSprites() {
       }, () => { a._passiveIconReady = false; done(); });
     }
   }
+  for (const id in UIUE_ASSETS) {
+    const a = UIUE_ASSETS[id];
+    if (!a.img) continue;
+    pending++;
+    loadImage(a.img, (im) => {
+      a._image = im;
+      a._ready = true;
+      done();
+    }, () => { a._ready = false; done(); });
+  }
   if (pending === 0 && window.onSpritesReady) window.onSpritesReady();
 }
 
 // 精灵表选帧：0待机 1跑 2~4攻击 5蹲防 6胜利 7受击
 function pickSpriteFrame(a, opts) {
   const attack = opts.attack != null ? opts.attack : 1;
+  if (a.rows === 1 && a.cols >= 4) {
+    if ((opts.flashAlpha || 0) > 0) return Math.min(2, a.cols - 1);
+    const walk = opts.walk || 0;
+    const frames = 2;
+    return Math.floor(walk * frames) % frames;
+  }
   if (attack < 1) {
     const t = 1 - attack;
     if (t < 0.34) return 2;
@@ -201,6 +266,10 @@ function getHeroIcons(heroId) {
 function getHeroPassiveIcon(heroId) {
   const a = SPRITE_ASSETS["hero:" + heroId];
   return (a && a._passiveIconReady && a._passiveIcon) ? (a._passiveIconSrc || a.passiveIcon) : null;
+}
+function getUiImage(id) {
+  const a = UIUE_ASSETS[id];
+  return (a && a._ready && a._image) ? a._image : null;
 }
 
 // ---------- R6-A: 统一绘制入口 ----------
@@ -224,7 +293,14 @@ function drawSprite(ctx, id, x, y, opts = {}) {
       const aspect = sh / sw;
       const drawW = s;
       const drawH = s * aspect;
-      ctx.drawImage(a._image, sx, sy, sw, sh, x - drawW / 2, y - drawH / 2, drawW, drawH);
+      if (opts.flipX) {
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(a._image, sx, sy, sw, sh, -x - drawW / 2, y - drawH / 2, drawW, drawH);
+        ctx.restore();
+      } else {
+        ctx.drawImage(a._image, sx, sy, sw, sh, x - drawW / 2, y - drawH / 2, drawW, drawH);
+      }
     } else {
       ctx.drawImage(a._image, x - s / 2, y - s / 2, s, s);
     }
@@ -1356,7 +1432,7 @@ function drawCutscene(ctx, w, h, type, p) {
 }
 
 window.Art = {
-  SPRITE_ASSETS, IMAGE_OVERRIDES, preloadSprites, drawSprite, getHeroPortrait, getHeroIcons, getHeroPassiveIcon,
+  SPRITE_ASSETS, IMAGE_OVERRIDES, UIUE_ASSETS, preloadSprites, drawSprite, getHeroPortrait, getHeroIcons, getHeroPassiveIcon, getUiImage,
   emitParticles, updateParticles, drawParticles, clearParticles,
   drawHomeScene, drawCutscene,
 };
